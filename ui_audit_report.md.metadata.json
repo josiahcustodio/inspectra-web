@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "A full audit of the Clowtec Admin Center UI covering all 6 pages, layout, tech stack, and backend feasibility for disease outbreak risk prediction and risk-offender prediction. Covers what's good, what's missing, and which features map directly to Supabase + ML backend.",
+  "updatedAt": "2026-03-11T08:52:54.578489500Z"
+}
