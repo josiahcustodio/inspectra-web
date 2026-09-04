@@ -5,45 +5,66 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../../lib/db";
 
 function getGradeColor(grade: string | null) {
-  if (!grade) return "#999999";
+  if (!grade) return "var(--muted-foreground)";
   switch (grade) {
     case "A":
-      return "#87A96B";
+      return "#10b981";
     case "B":
-      return "#FFD700";
+      return "#F59E0B";
     case "C":
     case "F":
-      return "#d4183d";
+      return "var(--destructive)";
     default:
-      return "#999999";
+      return "var(--muted-foreground)";
   }
 }
 
 function getStatusColor(status: string) {
   switch (status) {
     case "Completed":
-      return "#87A96B";
+      return "#10b981";
     case "Scheduled":
       return "#3b82f6";
     case "Requires Re-inspection":
-      return "#d4183d";
+      return "var(--destructive)";
     default:
-      return "#999999";
+      return "var(--muted-foreground)";
   }
+}
+
+function computeGrade(rating: number | null): string | null {
+  if (rating === null) return null;
+  if (rating >= 90) return "A";
+  if (rating >= 80) return "B";
+  if (rating >= 70) return "C";
+  return "F";
+}
+
+function getStatus(rating: number | null): string {
+  if (rating !== null) return "Completed";
+  return "Scheduled";
 }
 
 export function Inspections() {
   const inspections = useLiveQuery(async () => {
-    const insp = await db.inspections.toArray();
+    const insp = await db.inspection_logs.toArray();
     // Resolve relational names
     return Promise.all(insp.map(async (i) => {
-      const est = await db.establishments.get(i.establishment_id);
-      const inspector = await db.inspectors.get(i.inspector_id);
+      let estName = "Unknown Establishment";
+      if (i.establishment_id) {
+        const est = await db.establishments.get(i.establishment_id);
+        if (est) estName = est.business_name;
+      }
       return {
         ...i,
-        establishmentName: est?.name || "Unknown Establishment",
-        inspectorName: inspector?.name || "Unknown Inspector",
-        inspectorBadge: inspector?.inspectorId || i.inspector_id,
+        establishmentName: estName,
+        inspectorName: i.inspector_name || "Unknown Inspector",
+        inspectorBadge: "N/A",
+        grade: computeGrade(i.percentage_rating),
+        score: i.percentage_rating,
+        status: getStatus(i.percentage_rating),
+        date: i.inspection_date ? i.inspection_date.split('T')[0] : "No Date",
+        time: i.inspection_date && i.inspection_date.includes('T') ? i.inspection_date.split('T')[1].substring(0, 5) : "--:--"
       };
     }));
   }, []) ?? [];
@@ -52,64 +73,66 @@ export function Inspections() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#333333]">Inspections</h2>
-          <p className="text-[#999999] mt-1">View and manage inspection records</p>
+          <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Inspections</h2>
+          <p className="text-muted-foreground mt-1">View and manage inspection records</p>
         </div>
-        <Button className="bg-[#87A96B] hover:bg-[#7a9860] text-white">
+        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-sm">
           Schedule New Inspection
         </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
         {inspections.length === 0 ? (
-          <Card className="p-12 bg-white rounded-xl border border-gray-200 text-center">
-            <p className="text-[#999999]">No inspections found locally.</p>
-            <p className="text-sm text-[#999999] mt-1">Wait for sync or schedule a new one.</p>
+          <Card className="p-12 bg-white rounded-xl  text-center">
+            <p className="text-muted-foreground font-bold">No inspections found locally.</p>
+            <p className="text-sm text-muted-foreground font-medium mt-1">Wait for sync or schedule a new one.</p>
           </Card>
         ) : (
           inspections.map((inspection) => (
-            <Card key={inspection.id} className="p-6 bg-white rounded-xl border border-gray-200">
+            <Card key={inspection.id} className="p-6 bg-white rounded-xl  hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="flex gap-4 flex-1">
-                  <div className="w-12 h-12 rounded-full bg-[#f0f4ed] flex items-center justify-center flex-shrink-0">
-                    <ClipboardCheck className="w-6 h-6 text-[#87A96B]" />
+                  <div className="w-12 h-12 rounded-full bg-slate-100  flex items-center justify-center flex-shrink-0">
+                    <ClipboardCheck className="w-6 h-6 text-primary" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-bold text-[#333333]">{inspection.establishmentName}</h3>
+                      <h3 className="font-bold text-slate-900 text-lg">{inspection.establishmentName}</h3>
                       {inspection.grade && (
                         <span
-                          className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold"
+                          className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border"
                           style={{
-                            backgroundColor: `${getGradeColor(inspection.grade)}20`,
+                            backgroundColor: `color-mix(in srgb, ${getGradeColor(inspection.grade)} 15%, transparent)`,
                             color: getGradeColor(inspection.grade),
+                            borderColor: `color-mix(in srgb, ${getGradeColor(inspection.grade)} 30%, transparent)`
                           }}
                         >
                           Grade {inspection.grade} ({inspection.score})
                         </span>
                       )}
                       <span
-                        className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold"
+                        className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border"
                         style={{
-                          backgroundColor: `${getStatusColor(inspection.status)}20`,
+                          backgroundColor: `color-mix(in srgb, ${getStatusColor(inspection.status)} 15%, transparent)`,
                           color: getStatusColor(inspection.status),
+                          borderColor: `color-mix(in srgb, ${getStatusColor(inspection.status)} 30%, transparent)`
                         }}
                       >
                         {inspection.status}
                       </span>
                     </div>
                     <div className="grid grid-cols-3 gap-x-6 gap-y-2 text-sm">
-                      <div className="flex items-center gap-2 text-[#999999]">
+                      <div className="flex items-center gap-2 text-muted-foreground font-medium">
                         <User className="w-4 h-4" />
                         <span>
                           {inspection.inspectorName} ({inspection.inspectorBadge})
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-[#999999]">
+                      <div className="flex items-center gap-2 text-muted-foreground font-medium">
                         <Calendar className="w-4 h-4" />
                         <span>{inspection.date}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-[#999999]">
+                      <div className="flex items-center gap-2 text-muted-foreground font-medium">
                         <ClipboardCheck className="w-4 h-4" />
                         <span>{inspection.time}</span>
                       </div>
@@ -118,17 +141,17 @@ export function Inspections() {
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
                   {inspection.status === "Completed" && (
-                    <Button size="sm" className="bg-[#87A96B] hover:bg-[#7a9860] text-white">
+                    <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-sm">
                       View Report
                     </Button>
                   )}
                   {inspection.status === "Scheduled" && (
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" className="border-border hover:bg-slate-50 font-bold">
                       Reschedule
                     </Button>
                   )}
                   {inspection.status === "Requires Re-inspection" && (
-                    <Button size="sm" className="bg-[#d4183d] hover:bg-[#c01535] text-white">
+                    <Button size="sm" className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold shadow-sm">
                       Schedule Re-inspection
                     </Button>
                   )}

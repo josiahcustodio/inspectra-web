@@ -5,3 +5,5 @@ build/
 .DS_Store
 Thumbs.db
 desktop.ini
+node-v*-win-x64/
+__pycache__/

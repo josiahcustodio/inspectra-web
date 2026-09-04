@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { syncAll } from './sync';
 
 interface SyncContextType {
@@ -18,6 +18,22 @@ export const useSync = () => useContext(SyncContext);
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
+  const isSyncingRef = useRef(false);
+
+  const forceSync = useCallback(async () => {
+    if (!navigator.onLine || isSyncingRef.current) return;
+    
+    isSyncingRef.current = true;
+    setIsSyncing(true);
+    try {
+      await syncAll();
+    } catch (e) {
+      console.error("Sync failed", e);
+    } finally {
+      isSyncingRef.current = false;
+      setIsSyncing(false);
+    }
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -36,10 +52,14 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    const handleFocus = () => {
+      forceSync();
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', forceSync);
+    window.addEventListener('focus', handleFocus);
 
     // Initial sync on startup if online
     if (navigator.onLine) {
@@ -57,23 +77,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', forceSync);
+      window.removeEventListener('focus', handleFocus);
       clearInterval(intervalId);
     };
-  }, []);
-
-  const forceSync = async () => {
-    if (!navigator.onLine || isSyncing) return;
-    
-    setIsSyncing(true);
-    try {
-      await syncAll();
-    } catch (e) {
-      console.error("Sync failed", e);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+  }, [forceSync]);
 
   return (
     <SyncContext.Provider value={{ isOnline, isSyncing, forceSync }}>

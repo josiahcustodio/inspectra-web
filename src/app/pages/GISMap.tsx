@@ -7,8 +7,11 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
 // Fix default marker icon issue with Vite + Leaflet
+// @ts-ignore
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+// @ts-ignore
 import markerIcon from "leaflet/dist/images/marker-icon.png";
+// @ts-ignore
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -191,12 +194,12 @@ export function GISMap() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#333333] text-2xl">Live City Health Monitor</h2>
-          <p className="text-[#999999] mt-1">Real-time geographic visualization · Batangas City</p>
+          <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Live City Health Monitor</h2>
+          <p className="text-muted-foreground mt-1 font-medium">Real-time geographic visualization · Batangas City</p>
         </div>
         <Button
           variant="outline"
-          className={`gap-2 ${heatmapEnabled ? "bg-[#87A96B] text-white hover:bg-[#7a9860]" : ""}`}
+          className={`gap-2 ${heatmapEnabled ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border-border hover:bg-slate-50"}`}
           onClick={() => setHeatmapEnabled(!heatmapEnabled)}
         >
           <Layers className="w-4 h-4" />
@@ -206,12 +209,12 @@ export function GISMap() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Main Map Card */}
-        <Card className="p-0 bg-white rounded-xl border border-gray-200 lg:col-span-3 overflow-hidden relative shadow-sm">
+        <Card className="p-0 bg-white rounded-xl  lg:col-span-3 overflow-hidden relative shadow-sm">
 
           {/* Floating Search Bar */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md px-4">
             <div className="relative shadow-lg rounded-xl">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#999999]" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 type="text"
                 placeholder="Locate establishment by name or barangay..."
@@ -222,15 +225,15 @@ export function GISMap() {
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               />
               {showSuggestions && searchQuery && filteredSuggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden z-[1001]">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white  rounded-xl shadow-xl overflow-hidden z-[1001]">
                   {filteredSuggestions.map((pin) => (
                     <button
                       key={pin.id}
-                      className="w-full px-4 py-3 text-left hover:bg-[#f0f4ed] transition-colors border-b border-gray-50 last:border-0"
+                      className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
                       onClick={() => { setSelectedPin(pin); setSearchQuery(pin.name); setShowSuggestions(false); }}
                     >
-                      <p className="font-bold text-[#333333] text-sm">{pin.name}</p>
-                      <p className="text-xs text-[#999999]">{pin.barangay} · Score: {pin.score}%</p>
+                      <p className="font-bold text-slate-900 text-sm">{pin.name}</p>
+                      <p className="text-xs text-muted-foreground font-medium">{pin.barangay} · Score: {pin.score}%</p>
                     </button>
                   ))}
                 </div>
@@ -243,7 +246,7 @@ export function GISMap() {
             <Button
               size="sm"
               onClick={centerMap}
-              className="w-10 h-10 p-0 bg-white hover:bg-gray-50 text-[#333333] rounded-lg shadow-md border border-gray-200"
+              className="w-10 h-10 p-0 bg-white hover:bg-slate-50 text-slate-900 rounded-lg shadow-md "
               title="Center Map"
             >
               <Crosshair className="w-5 h-5" />
@@ -255,17 +258,17 @@ export function GISMap() {
 
           {/* Selected Pin Detail Panel */}
           {selectedPin && (
-            <div className="absolute left-6 top-1/2 -translate-y-1/2 z-[1000] w-72 pointer-events-none">
-              <Card className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200 overflow-hidden pointer-events-auto">
+            <div className="absolute left-6 top-1/2 -translate-y-1/2 z-[1000] w-82 pointer-events-none">
+              <Card className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl  overflow-hidden pointer-events-auto">
                 <div className="p-5">
                   <button
                     onClick={() => setSelectedPin(null)}
-                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 transition-colors"
+                    className="absolute top-4 right-4 text-muted-foreground hover:text-slate-900 transition-colors"
                   >
                     <X className="w-5 h-5" />
                   </button>
 
-                  <h3 className="font-bold text-[#333333] text-lg mb-3 pr-8 leading-tight">
+                  <h3 className="font-bold text-slate-900 text-xl mb-3 pr-8 leading-tight tracking-tight">
                     {selectedPin.name}
                   </h3>
 
@@ -273,8 +276,8 @@ export function GISMap() {
                     const badge = getStatusBadge(selectedPin.status, selectedPin.score);
                     return (
                       <span
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-4 shadow-sm"
-                        style={{ backgroundColor: badge.bg, color: badge.color }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-4 shadow-sm border"
+                        style={{ backgroundColor: badge.bg, color: badge.color, borderColor: `${badge.color}30` }}
                       >
                         <span>{badge.icon}</span>
                         <span>{badge.text}</span>
@@ -282,32 +285,32 @@ export function GISMap() {
                     );
                   })()}
 
-                  <div className="mb-4 p-4 rounded-xl bg-gray-50 border border-gray-100">
-                    <p className="text-[#999999] text-xs font-medium mb-1">Health Score</p>
+                  <div className="mb-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                    <p className="text-muted-foreground text-xs font-bold mb-1 uppercase tracking-wider">Health Score</p>
                     <div className="flex items-baseline gap-2">
-                      <span className="font-bold text-4xl" style={{ color: getScoreColor(selectedPin.score), lineHeight: 1 }}>
+                      <span className="font-black text-5xl" style={{ color: getScoreColor(selectedPin.score), lineHeight: 1 }}>
                         {selectedPin.score}%
                       </span>
-                      <span className="text-[#999999] text-sm">/ 100</span>
+                      <span className="text-muted-foreground font-bold text-sm">/ 100</span>
                     </div>
                   </div>
 
-                  <div className="space-y-2.5 mb-5 px-1">
-                    <div className="flex items-center gap-3 text-xs">
-                      <Clock className="w-4 h-4 text-[#999999]" />
-                      <span className="text-[#444]">Inspected: <span className="font-semibold text-gray-800">{selectedPin.lastInspected}</span></span>
+                  <div className="space-y-3 mb-5 px-1">
+                    <div className="flex items-center gap-3 text-sm">
+                      <Clock className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-slate-600 font-medium">Inspected: <span className="font-bold text-slate-900">{selectedPin.lastInspected}</span></span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs">
-                      <UserIcon className="w-4 h-4 text-[#999999]" />
-                      <span className="text-[#444]">By: <span className="font-semibold text-gray-800">{selectedPin.inspector}</span></span>
+                    <div className="flex items-center gap-3 text-sm">
+                      <UserIcon className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-slate-600 font-medium">By: <span className="font-bold text-slate-900">{selectedPin.inspector}</span></span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs">
-                      <MapPin className="w-4 h-4 text-[#999999]" />
-                      <span className="text-[#444] font-medium">{selectedPin.barangay}</span>
+                    <div className="flex items-center gap-3 text-sm">
+                      <MapPin className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-slate-900 font-bold">{selectedPin.barangay}</span>
                     </div>
                   </div>
 
-                  <Button className="w-full bg-[#87A96B] hover:bg-[#7a9860] text-white text-sm font-semibold py-2.5 h-auto shadow-sm">
+                  <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-bold py-3 h-auto shadow-md">
                     View Full Report
                   </Button>
                 </div>
@@ -318,48 +321,48 @@ export function GISMap() {
 
         {/* Sidebar */}
         <div className="space-y-4">
-          <Card className="p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
-            <h3 className="font-bold text-[#333333] mb-5">Quick Statistics</h3>
+          <Card className="p-6 bg-white rounded-xl ">
+            <h3 className="font-bold text-slate-900 mb-5 text-lg tracking-tight">Quick Statistics</h3>
             <div className="space-y-3">
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-[#f0f4ed] border border-[#87A96B]/10">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-50 border border-emerald-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-[#87A96B] border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-[#333333] font-semibold">Passed</span>
+                  <div className="w-4 h-4 rounded-full bg-emerald-500 border-[3px] border-white shadow-sm" />
+                  <span className="text-sm text-slate-700 font-bold">Passed</span>
                 </div>
-                <span className="font-bold text-xl text-[#87A96B]">{passedCount}</span>
+                <span className="font-black text-2xl text-emerald-600">{passedCount}</span>
               </div>
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-[#fffbeb] border border-[#DAA520]/10">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-amber-50 border border-amber-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-[#DAA520] border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-[#333333] font-semibold">Warning</span>
+                  <div className="w-4 h-4 rounded-full bg-amber-500 border-[3px] border-white shadow-sm" />
+                  <span className="text-sm text-slate-700 font-bold">Warning</span>
                 </div>
-                <span className="font-bold text-xl text-[#DAA520]">{warningCount}</span>
+                <span className="font-black text-2xl text-amber-600">{warningCount}</span>
               </div>
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-[#fee] border border-[#DC143C]/10">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-red-50 border border-red-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-[#DC143C] border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-[#333333] font-semibold">Failed</span>
+                  <div className="w-4 h-4 rounded-full bg-red-500 border-[3px] border-white shadow-sm" />
+                  <span className="text-sm text-slate-700 font-bold">Failed</span>
                 </div>
-                <span className="font-bold text-xl text-[#DC143C]">{failedCount}</span>
+                <span className="font-black text-2xl text-red-600">{failedCount}</span>
               </div>
             </div>
           </Card>
 
-          <Card className="p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
-            <h3 className="font-bold text-[#333333] mb-5">Legend</h3>
+          <Card className="p-6 bg-white rounded-xl ">
+            <h3 className="font-bold text-slate-900 mb-5 text-lg tracking-tight">Legend</h3>
             <div className="space-y-4">
               {[
-                { color: "#87A96B", label: "Excellent", range: "90–100%" },
-                { color: "#DAA520", label: "Satisfactory", range: "70–89%" },
-                { color: "#DC143C", label: "Critical", range: "Below 70%" },
+                { color: "#10b981", label: "Excellent", range: "90–100%" },
+                { color: "#f59e0b", label: "Satisfactory", range: "70–89%" },
+                { color: "#ef4444", label: "Critical", range: "Below 70%" },
               ].map(({ color, label, range }) => (
-                <div key={label} className="flex items-center gap-3.5">
-                  <div className="w-7 h-7 rounded-full border-[3px] border-white shadow-md flex items-center justify-center flex-shrink-0" style={{ backgroundColor: color }}>
+                <div key={label} className="flex items-center gap-4">
+                  <div className="w-8 h-8 rounded-full border-[3px] border-white shadow-md flex items-center justify-center flex-shrink-0" style={{ backgroundColor: color }}>
                     <div className="w-1.5 h-1.5 bg-white rounded-full" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-[#333333]">{label}</p>
-                    <p className="text-xs text-[#999999] mt-0.5">{range}</p>
+                    <p className="text-sm font-bold text-slate-800">{label}</p>
+                    <p className="text-xs text-muted-foreground font-bold">{range}</p>
                   </div>
                 </div>
               ))}
@@ -367,15 +370,15 @@ export function GISMap() {
           </Card>
 
           {failedCount > 0 && (
-            <Card className="p-6 bg-[#fff0f2] rounded-xl border border-[#DC143C]/20 shadow-sm">
+            <Card className="p-6 bg-red-50 rounded-xl border border-red-200 shadow-sm animate-pulse-subtle">
               <div className="flex items-center gap-3 mb-3">
-                <AlertTriangle className="w-5 h-5 text-[#DC143C]" />
-                <h3 className="font-bold text-[#DC143C]">Critical Alerts</h3>
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <h3 className="font-bold text-red-600 text-lg">Critical Alerts</h3>
               </div>
-              <p className="text-sm text-[#444444] leading-relaxed">
-                <span className="font-bold text-[#333333]">{failedCount}</span> establishments require immediate attention
+              <p className="text-sm text-slate-700 font-medium leading-relaxed">
+                <span className="font-black text-slate-900">{failedCount}</span> establishments require immediate attention
               </p>
-              <Button size="sm" className="w-full mt-4 bg-[#DC143C] hover:bg-[#b01030] text-white shadow-md shadow-red-500/20">
+              <Button size="sm" className="w-full mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-3 h-auto shadow-lg shadow-red-200">
                 View All Critical Cases
               </Button>
             </Card>

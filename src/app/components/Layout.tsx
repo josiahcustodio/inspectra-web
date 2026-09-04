@@ -1,88 +1,148 @@
-import { Outlet, NavLink } from "react-router";
+import { useState } from "react";
+import { Outlet, NavLink, useNavigate } from "react-router";
+import { signOut } from "firebase/auth";
+import { auth } from "../../lib/firebase";
 import { useSync } from "../../lib/SyncProvider";
-import { 
-  LayoutDashboard, 
-  Building2, 
-  ClipboardCheck, 
-  Map, 
-  Users, 
+import { useAuth } from "../../lib/useAuth";
+import {
+  LayoutDashboard,
+  Building2,
+  ClipboardCheck,
+  Map,
+  Users,
   Settings as SettingsIcon,
   Search,
-  User
+  User,
+  Menu,
+  ChevronLeft,
+  LogOut
 } from "lucide-react";
 import { Input } from "./ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
-const navItems = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/establishments", label: "Establishments", icon: Building2 },
-  { path: "/inspections", label: "Inspections", icon: ClipboardCheck },
-  { path: "/gis-map", label: "GIS Map", icon: Map },
-  { path: "/inspectors", label: "Inspectors", icon: Users },
-  { path: "/settings", label: "Settings", icon: SettingsIcon },
+const baseNavItems = [
+  { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { path: "establishments", label: "Establishments", icon: Building2 },
+  { path: "inspections", label: "Inspections", icon: ClipboardCheck },
+  { path: "gis-map", label: "GIS Map", icon: Map },
+  { path: "inspectors", label: "Inspectors", icon: Users },
+  { path: "settings", label: "Settings", icon: SettingsIcon },
 ];
+
+
 
 export function Layout() {
   const { isOnline, isSyncing } = useSync();
+  const { role, user } = useAuth();
+  const navigate = useNavigate();
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+
+  const rolePrefix = role === 'admin' ? '/admin' : '/officer';
+  const navItems = baseNavItems.map(item => ({ ...item, path: `${rolePrefix}/${item.path}` }));
+
+  const handleSignOut = async () => {
+    await signOut(auth);
+    navigate("/login", { replace: true });
+  };
 
   return (
-    <div className="flex h-screen bg-[#fafafa]">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-50">
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b border-gray-200">
-          <h1 className="font-bold text-[#333333]">Clowtec Admin Center</h1>
+      <aside className={`${isSidebarExpanded ? "w-64" : "w-[60px]"} bg-white flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10 transition-all duration-300 relative`}>
+        <div className={`p-6 flex items-center ${isSidebarExpanded ? "justify-between" : "justify-center"}`}>
+          {isSidebarExpanded && (
+            <h1 className="font-bold text-slate-900 tracking-tight text-base leading-tight">
+              Batangas City<br/>City Health Office
+            </h1>
+          )}
+          <button 
+            onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors flex-shrink-0"
+          >
+            {isSidebarExpanded ? <ChevronLeft className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
               end={item.path === "/"}
+              title={!isSidebarExpanded ? item.label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-bold ${
                   isActive
-                    ? "bg-[#f0f4ed] text-[#87A96B]"
-                    : "text-[#333333] hover:bg-gray-50"
-                }`
+                    ? "bg-primary text-primary-foreground shadow-md"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                } ${!isSidebarExpanded && "justify-center px-0"}`
               }
             >
-              <item.icon className="w-5 h-5" />
-              <span>{item.label}</span>
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {isSidebarExpanded && <span className="truncate">{item.label}</span>}
             </NavLink>
           ))}
         </nav>
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
+        <header className="bg-white px-8 py-4 flex items-center justify-between shadow-[0_4px_24px_rgba(0,0,0,0.02)] z-10">
           <div className="flex-1 max-w-xl relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#999999]" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-500" />
             <Input
               type="text"
               placeholder="Search by name, ID, or barangay..."
-              className="pl-10 bg-[#f3f3f5] border-none"
+              className="pl-10 bg-slate-100 border-none shadow-inner text-slate-900 font-medium placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-primary/20"
             />
           </div>
           <div className="flex items-center gap-4">
             {!isOnline && (
-              <div className="flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-bold">
+              <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-bold border border-amber-100">
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                 Offline Mode
               </div>
             )}
             {isSyncing && (
-              <span className="text-xs text-[#999999] animate-pulse">Syncing...</span>
+              <span className="text-xs text-slate-600 font-bold animate-pulse">Syncing...</span>
             )}
-            <span className="text-[#333333]">Hello, Supervisor</span>
-            <div className="w-10 h-10 rounded-full bg-[#87A96B] flex items-center justify-center">
-              <User className="w-5 h-5 text-white" />
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center gap-3 outline-none rounded-full focus-visible:ring-2 focus-visible:ring-primary/20">
+                <span className="text-slate-900 font-bold hidden sm:inline">
+                  {user?.email ?? "Account"}
+                </span>
+                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-sm">
+                  <User className="w-5 h-5 text-primary-foreground" />
+                </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel className="font-normal">
+                  <p className="text-sm font-bold text-slate-900 truncate">{user?.email}</p>
+                  <p className="text-xs text-slate-500 capitalize mt-0.5">{role ?? "—"}</p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate(`${rolePrefix}/settings`)}>
+                  <SettingsIcon className="w-4 h-4" />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onClick={handleSignOut}>
+                  <LogOut className="w-4 h-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-hidden flex flex-col">
           {/* Offline Warning Banner */}
           {!isOnline && (
             <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5 flex items-center gap-3">
@@ -92,7 +152,7 @@ export function Layout() {
               </p>
             </div>
           )}
-          <div className="p-8">
+          <div className="p-6 flex-1 overflow-hidden min-h-0">
             <Outlet />
           </div>
         </main>

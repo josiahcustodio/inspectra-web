@@ -3,9 +3,12 @@
   import App from "./app/App.tsx";
   import "./styles/index.css";
   import { SyncProvider } from "./lib/SyncProvider.tsx";
+  import { AuthProvider } from "./lib/useAuth.tsx";
 
   createRoot(document.getElementById("root")!).render(
-    <SyncProvider>
-      <App />
-    </SyncProvider>
+    <AuthProvider>
+      <SyncProvider>
+        <App />
+      </SyncProvider>
+    </AuthProvider>
   );
