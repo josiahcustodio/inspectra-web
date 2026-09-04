@@ -199,8 +199,21 @@ export async function pullFromFirebase() {
 
 export async function syncAll() {
   if (!navigator.onLine) return;
-  if (!auth.currentUser) return; // Skip sync if not logged in
-  
+  const user = auth.currentUser;
+  if (!user) return; // Skip sync if not logged in
+
+  // A sync triggered right after a fresh sign-in (e.g. the focus/visibility
+  // listeners in SyncProvider) can race Firestore's internal auth-credential
+  // listener: auth.currentUser is already set, but Firestore hasn't yet
+  // picked up the new token, so getDocs() below comes back permission-denied
+  // even though the security rules allow it. Forcing a token fetch is a real
+  // round-trip that only resolves once that credential state has settled.
+  try {
+    await user.getIdToken();
+  } catch {
+    return;
+  }
+
   console.log("Starting background sync...");
   await pushToFirebase();
   await pullFromFirebase();
