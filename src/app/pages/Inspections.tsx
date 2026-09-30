@@ -32,21 +32,7 @@ import {
   mapInspectionLog,
 } from "../../lib/firestore";
 import type { InspectionLog } from "../../lib/models";
-
-function getGradeColor(grade: string | null) {
-  if (!grade) return "var(--muted-foreground)";
-  switch (grade) {
-    case "A":
-      return "#10b981";
-    case "B":
-      return "#F59E0B";
-    case "C":
-    case "F":
-      return "var(--destructive)";
-    default:
-      return "var(--muted-foreground)";
-  }
-}
+import { ratingColor, ratingLabel } from "../../lib/ratingScale";
 
 function getStatusColor(status: string) {
   switch (status) {
@@ -59,16 +45,10 @@ function getStatusColor(status: string) {
   }
 }
 
-function computeGrade(rating: number | null): string | null {
-  if (rating === null) return null;
-  if (rating >= 90) return "A";
-  if (rating >= 80) return "B";
-  if (rating >= 70) return "C";
-  return "F";
-}
-
-function getStatus(rating: number | null): string {
-  if (rating !== null) return "Completed";
+function getStatus(rating: number | null | undefined): string {
+  // `== null` on purpose: mapInspectionLog spreads the raw Firestore document,
+  // so a log written without `percentage_rating` arrives as undefined, not null.
+  if (rating != null) return "Completed";
   return "Scheduled";
 }
 
@@ -108,7 +88,7 @@ const ANSWER_STYLE: Record<AnswerKind, { label: string; color: string; Icon: typ
 interface InspectionRow extends InspectionLog {
   establishmentName: string;
   inspectorName: string;
-  grade: string | null;
+  ratingBandLabel: string | null;
   score: number | null;
   status: string;
   date: string;
@@ -136,7 +116,9 @@ export function Inspections() {
         (i.establishment_id ? nameById.get(i.establishment_id) : null) ??
         "Unknown Establishment",
       inspectorName: i.inspector_name || "Unknown Inspector",
-      grade: computeGrade(i.percentage_rating),
+      // [REF: RATING_SCALE] band label and colour both come from the shared scale.
+      // `== null` catches undefined too — see getStatus above.
+      ratingBandLabel: i.percentage_rating == null ? null : ratingLabel(i.percentage_rating),
       score: i.percentage_rating,
       status: getStatus(i.percentage_rating),
       date: i.inspection_date ? i.inspection_date.split('T')[0] : "No Date",
@@ -237,16 +219,16 @@ export function Inspections() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="font-bold text-slate-900 text-lg">{inspection.establishmentName}</h3>
-                      {inspection.grade && (
+                      {inspection.ratingBandLabel && (
                         <span
                           className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border"
                           style={{
-                            backgroundColor: `color-mix(in srgb, ${getGradeColor(inspection.grade)} 15%, transparent)`,
-                            color: getGradeColor(inspection.grade),
-                            borderColor: `color-mix(in srgb, ${getGradeColor(inspection.grade)} 30%, transparent)`
+                            backgroundColor: `color-mix(in srgb, ${ratingColor(inspection.score)} 15%, transparent)`,
+                            color: ratingColor(inspection.score),
+                            borderColor: `color-mix(in srgb, ${ratingColor(inspection.score)} 30%, transparent)`
                           }}
                         >
-                          Grade {inspection.grade} ({inspection.score})
+                          {inspection.ratingBandLabel} ({inspection.score}%)
                         </span>
                       )}
                       <span
@@ -332,16 +314,16 @@ export function Inspections() {
           <DialogHeader>
             <DialogTitle className="text-slate-900 font-bold flex items-center gap-3 flex-wrap pr-6">
               {selected?.establishmentName}
-              {selected?.grade && (
+              {selected?.ratingBandLabel && (
                 <span
                   className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border"
                   style={{
-                    backgroundColor: `color-mix(in srgb, ${getGradeColor(selected.grade)} 15%, transparent)`,
-                    color: getGradeColor(selected.grade),
-                    borderColor: `color-mix(in srgb, ${getGradeColor(selected.grade)} 30%, transparent)`
+                    backgroundColor: `color-mix(in srgb, ${ratingColor(selected.score)} 15%, transparent)`,
+                    color: ratingColor(selected.score),
+                    borderColor: `color-mix(in srgb, ${ratingColor(selected.score)} 30%, transparent)`
                   }}
                 >
-                  Grade {selected.grade} ({selected.score})
+                  {selected.ratingBandLabel} ({selected.score}%)
                 </span>
               )}
             </DialogTitle>

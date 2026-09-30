@@ -15,6 +15,13 @@ import {
 } from "recharts";
 import { useCollection } from "../../lib/useCollection";
 import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "../../lib/firestore";
+import {
+  PASSING_SCORE,
+  RATING_BANDS,
+  emptyBandCounts,
+  isHighRisk,
+  ratingBand,
+} from "../../lib/ratingScale";
 
 // [REF: CARD_SURFACE_STYLE]
 // The only shared style constant in the web app. Every other screen spells
@@ -36,20 +43,20 @@ export function Dashboard() {
         inspectedBarangays: 0,
         complianceRating: "0%",
         highRiskBarangays: 0,
-        gradeData: [
-          { name: "A (Excellent)", value: 0, color: "#10b981" },
-          { name: "B (Satisfactory)", value: 0, color: "#f59e0b" },
-          { name: "C/F (Failed)", value: 0, color: "#ef4444" },
-        ],
+        gradeData: RATING_BANDS.map(b => ({
+          name: b.label,
+          range: b.range,
+          value: 0,
+          color: b.color,
+        })),
         barangayData: []
       };
     }
 
     let totalScore = 0;
     let countScore = 0;
-    let gradeA = 0;
-    let gradeB = 0;
-    let gradeC = 0;
+    // [REF: RATING_SCALE] one tally per band, keyed by the shared band ids
+    const bandCounts = emptyBandCounts();
 
     const barangayFailures: Record<string, number> = {};
     const barangayScores: Record<string, { total: number, count: number }> = {};
@@ -75,16 +82,14 @@ export function Dashboard() {
       totalScore += score;
       countScore++;
 
-      if (score >= 90) gradeA++;
-      else if (score >= 70) gradeB++;
-      else gradeC++;
+      bandCounts[ratingBand(score)]++;
 
       const brgy = log.establishment_id ? estToBrgy.get(log.establishment_id) : null;
       const validBrgy = brgy || "Unknown";
       
       inspectedBarangaysSet.add(validBrgy);
 
-      if (score < 70) {
+      if (isHighRisk(score)) {
         barangayFailures[validBrgy] = (barangayFailures[validBrgy] || 0) + 1;
       }
 
@@ -97,7 +102,7 @@ export function Dashboard() {
     
     let highRiskCount = 0;
     for (const [brgy, s] of Object.entries(barangayScores)) {
-      if (s.count > 0 && (s.total / s.count) < 70) {
+      if (s.count > 0 && isHighRisk(s.total / s.count)) {
         highRiskCount++;
       }
     }
@@ -107,19 +112,17 @@ export function Dashboard() {
       .sort((a, b) => b.violations - a.violations)
       .slice(0, 6);
 
-    const pctA = countScore > 0 ? Math.round((gradeA / countScore) * 100) : 0;
-    const pctB = countScore > 0 ? Math.round((gradeB / countScore) * 100) : 0;
-    const pctC = countScore > 0 ? Math.round((gradeC / countScore) * 100) : 0;
 
     return {
       inspectedBarangays: inspectedBarangaysSet.size,
       complianceRating: `${avgCompliance}%`,
       highRiskBarangays: highRiskCount,
-      gradeData: [
-        { name: "A (Excellent)", value: pctA, color: "#10b981" },
-        { name: "B (Satisfactory)", value: pctB, color: "#f59e0b" },
-        { name: "C/F (Failed)", value: pctC, color: "#ef4444" },
-      ],
+      gradeData: RATING_BANDS.map(b => ({
+        name: b.label,
+        range: b.range,
+        value: countScore > 0 ? Math.round((bandCounts[b.band] / countScore) * 100) : 0,
+        color: b.color,
+      })),
       barangayData: topNonCompliant.length > 0 ? topNonCompliant : [{ name: "No data", violations: 0 }]
     };
   }, [establishments, inspectionLogs]);
@@ -187,7 +190,7 @@ export function Dashboard() {
             </div>
           </div>
           <div className="relative z-10 mt-2 flex items-center gap-2">
-            <span className="text-xs font-bold text-destructive/70">Barangays averaging below 70% on their inspections</span>
+            <span className="text-xs font-bold text-destructive/70">Barangays averaging below {PASSING_SCORE}% &mdash; the lowest rating band</span>
           </div>
         </div>
       </div>
@@ -234,7 +237,7 @@ export function Dashboard() {
           <div className={`flex-1 flex flex-col ${glassCard} p-6 min-h-0`}>
             <div className="mb-6 flex-shrink-0">
               <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">City-Wide Clearance Level</h3>
-              <p className="text-sm text-muted-foreground truncate font-medium mt-1">Overall sanitary inspection grades across all monitored establishments.</p>
+              <p className="text-sm text-muted-foreground truncate font-medium mt-1">Share of inspections in each sanitary rating band.</p>
             </div>
             
             {/* Horizontal Split Layout */}
@@ -275,9 +278,12 @@ export function Dashboard() {
               <div className="flex-1 flex flex-col justify-center space-y-4">
                 {gradeData.map((item) => (
                   <div key={item.name} className="flex items-center justify-between group">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-3 h-3 rounded-full shadow-sm flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <span className="text-sm font-bold text-slate-600 truncate">{item.name}</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-600 truncate">{item.name}</p>
+                        <p className="text-xs font-bold text-muted-foreground">{item.range}</p>
+                      </div>
                     </div>
                     <span className="text-base font-black text-slate-900">{item.value}%</span>
                   </div>

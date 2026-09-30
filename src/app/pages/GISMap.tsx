@@ -13,6 +13,15 @@ import {
   canonicalBarangay,
   normalizeBarangay,
 } from "../../lib/barangayGeo";
+import {
+  PASSING_SCORE,
+  RATING_BANDS,
+  UNSCORED_COLOR,
+  UNSCORED_LABEL,
+  colorOfBand,
+  ratingBand,
+  ratingColor,
+} from "../../lib/ratingScale";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -37,15 +46,18 @@ interface EstablishmentRow {
   lastInspected: string;
 }
 
+/// [REF: RATING_SCALE]
+/// The three buckets are the shared rating bands, so a barangay's breakdown
+/// reads the same way it does on the dashboard and in the mobile app.
 interface BarangayStats {
   name: string;
   total: number;
-  /// Latest inspection rated a perfect 100%.
-  compliant: number;
-  /// Latest inspection rated 70–99%: passing, with deficiencies noted.
-  moderate: number;
-  /// Latest inspection rated below 70%.
-  highRisk: number;
+  /// Latest inspection rated 90–100%.
+  excellent: number;
+  /// Latest inspection rated 70–89%.
+  verySatisfactory: number;
+  /// Latest inspection rated 0–69%.
+  satisfactory: number;
   /// Registered, but never inspected. Not a failure.
   notInspected: number;
   /// Mean of the inspected establishments' scores; null when none is inspected.
@@ -57,28 +69,23 @@ function emptyStats(name: string): BarangayStats {
   return {
     name,
     total: 0,
-    compliant: 0,
-    moderate: 0,
-    highRisk: 0,
+    excellent: 0,
+    verySatisfactory: 0,
+    satisfactory: 0,
     notInspected: 0,
     avgScore: null,
     establishments: [],
   };
 }
 
-function getScoreColor(score: number) {
-  if (score >= 90) return "#87A96B";
-  if (score >= 70) return "#DAA520";
-  return "#DC143C";
-}
-
 /// The fill for a barangay under risk shading, mirroring the three stat
-/// buckets: any high-risk establishment dominates, then any moderate one.
+/// buckets: the lowest band present decides the colour, so one failing
+/// establishment is never hidden behind its compliant neighbours.
 function riskColor(stats: BarangayStats) {
-  if (stats.highRisk > 0) return "#DC143C";
-  if (stats.moderate > 0) return "#DAA520";
-  if (stats.compliant > 0) return "#059669";
-  return "#94a3b8";
+  if (stats.satisfactory > 0) return colorOfBand("satisfactory");
+  if (stats.verySatisfactory > 0) return colorOfBand("verySatisfactory");
+  if (stats.excellent > 0) return colorOfBand("excellent");
+  return UNSCORED_COLOR;
 }
 
 /// "3 hours ago" from an ISO timestamp.
@@ -167,15 +174,16 @@ export function GISMap() {
         stats.notInspected++;
         citywide.notInspected++;
       } else {
-        if (score >= 100) {
-          stats.compliant++;
-          citywide.compliant++;
-        } else if (score >= 70) {
-          stats.moderate++;
-          citywide.moderate++;
+        const band = ratingBand(score);
+        if (band === "excellent") {
+          stats.excellent++;
+          citywide.excellent++;
+        } else if (band === "verySatisfactory") {
+          stats.verySatisfactory++;
+          citywide.verySatisfactory++;
         } else {
-          stats.highRisk++;
-          citywide.highRisk++;
+          stats.satisfactory++;
+          citywide.satisfactory++;
         }
 
         const sum = scoreSums.get(name) ?? { total: 0, count: 0 };
@@ -245,7 +253,7 @@ export function GISMap() {
 
     if (count > 0) {
       const density = count / maxCount;
-      fillColor = shadingEnabled ? riskColor(stats!) : "#059669";
+      fillColor = shadingEnabled ? riskColor(stats!) : colorOfBand("excellent");
       fillOpacity = 0.25 + density * 0.4;
     }
 
@@ -472,7 +480,7 @@ export function GISMap() {
               {panelStats.avgScore !== null && (
                 <div className="text-right flex-shrink-0">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Avg</p>
-                  <p className="font-black text-xl leading-none" style={{ color: getScoreColor(panelStats.avgScore) }}>
+                  <p className="font-black text-xl leading-none" style={{ color: ratingColor(panelStats.avgScore) }}>
                     {panelStats.avgScore}%
                   </p>
                 </div>
@@ -484,31 +492,35 @@ export function GISMap() {
                 <span className="text-sm text-slate-700 font-bold">Establishments</span>
                 <span className="font-black text-2xl text-slate-900">{panelStats.total}</span>
               </div>
-              <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-50 border border-emerald-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-emerald-500 border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-slate-700 font-bold">100% compliant</span>
+              {/* [REF: RATING_SCALE] one row per band, in the shared order */}
+              {RATING_BANDS.map((b) => (
+                <div
+                  key={b.band}
+                  className="flex items-center justify-between p-4 rounded-xl border"
+                  style={{
+                    backgroundColor: `color-mix(in srgb, ${b.color} 10%, transparent)`,
+                    borderColor: `color-mix(in srgb, ${b.color} 25%, transparent)`,
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-4 h-4 rounded-full border-[3px] border-white shadow-sm"
+                      style={{ backgroundColor: b.color }}
+                    />
+                    <div>
+                      <p className="text-sm text-slate-700 font-bold leading-tight">{b.label}</p>
+                      <p className="text-xs text-muted-foreground font-bold">{b.range}%</p>
+                    </div>
+                  </div>
+                  <span className="font-black text-2xl" style={{ color: b.color }}>
+                    {panelStats[b.band]}
+                  </span>
                 </div>
-                <span className="font-black text-2xl text-emerald-600">{panelStats.compliant}</span>
-              </div>
-              <div className="flex items-center justify-between p-4 rounded-xl bg-amber-50 border border-amber-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-amber-500 border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-slate-700 font-bold">Moderate deficiencies</span>
-                </div>
-                <span className="font-black text-2xl text-amber-600">{panelStats.moderate}</span>
-              </div>
-              <div className="flex items-center justify-between p-4 rounded-xl bg-red-50 border border-red-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-red-500 border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-slate-700 font-bold">High risk</span>
-                </div>
-                <span className="font-black text-2xl text-red-600">{panelStats.highRisk}</span>
-              </div>
+              ))}
               <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-100">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-4 rounded-full bg-slate-400 border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-slate-700 font-bold">Not yet inspected</span>
+                  <span className="text-sm text-slate-700 font-bold">{UNSCORED_LABEL}</span>
                 </div>
                 <span className="font-black text-2xl text-slate-500">{panelStats.notInspected}</span>
               </div>
@@ -531,7 +543,7 @@ export function GISMap() {
                       </div>
                       <span
                         className="font-black text-sm flex-shrink-0"
-                        style={{ color: est.score === null ? "#94a3b8" : getScoreColor(est.score) }}
+                        style={{ color: ratingColor(est.score) }}
                       >
                         {est.score === null ? "—" : `${est.score}%`}
                       </span>
@@ -552,10 +564,8 @@ export function GISMap() {
             <h3 className="font-bold text-slate-900 mb-5 text-lg tracking-tight">Legend</h3>
             <div className="space-y-4">
               {[
-                { color: "#059669", label: "100% compliant", range: "Perfect rating" },
-                { color: "#DAA520", label: "Moderate deficiencies", range: "70–99%" },
-                { color: "#DC143C", label: "High risk", range: "Below 70%" },
-                { color: "#94a3b8", label: "Not yet inspected", range: "No inspection on record" },
+                ...RATING_BANDS.map(b => ({ color: b.color, label: b.label, range: `${b.range}%` })),
+                { color: UNSCORED_COLOR, label: UNSCORED_LABEL, range: "No inspection on record" },
               ].map(({ color, label, range }) => (
                 <div key={label} className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded-lg border-[3px] border-white shadow-md flex-shrink-0" style={{ backgroundColor: color }} />
@@ -572,15 +582,16 @@ export function GISMap() {
             </p>
           </Card>
 
-          {citywide.highRisk > 0 && (
+          {citywide.satisfactory > 0 && (
             <Card className="p-6 bg-red-50 rounded-xl border border-red-200 shadow-sm">
               <div className="flex items-center gap-3 mb-3">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
                 <h3 className="font-bold text-red-600 text-lg">Critical Alerts</h3>
               </div>
               <p className="text-sm text-slate-700 font-medium leading-relaxed">
-                <span className="font-black text-slate-900">{citywide.highRisk}</span> establishment
-                {citywide.highRisk === 1 ? "" : "s"} citywide rated below 70% on the latest inspection.
+                <span className="font-black text-slate-900">{citywide.satisfactory}</span> establishment
+                {citywide.satisfactory === 1 ? "" : "s"} citywide scored below {PASSING_SCORE}% on the latest
+                inspection — the lowest rating band.
               </p>
             </Card>
           )}
