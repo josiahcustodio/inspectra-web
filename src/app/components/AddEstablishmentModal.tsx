@@ -1,16 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { db, DbEstablishment, DbCategory } from "../../lib/db";
+import { toast } from "sonner";
+import { COLLECTIONS, mapCategory, saveEstablishment } from "../../lib/firestore";
+import { useCollection } from "../../lib/useCollection";
+import type { Category, Establishment } from "../../lib/models";
 import psgcData from "../../lib/data/batangas_psgc.json";
 
 interface AddEstablishmentModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  establishmentToEdit?: DbEstablishment | null;
+  establishmentToEdit?: Establishment | null;
   onSave?: () => void;
 }
 
@@ -25,18 +28,19 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
   const [street, setStreet] = useState("");
   
   const [loading, setLoading] = useState(false);
-  const [categories, setCategories] = useState<DbCategory[]>([]);
 
-  useEffect(() => {
-    db.categories.toArray().then((cats) => {
-      if (cats.length > 0) {
-        setCategories(cats);
-      } else {
-        // Fallback for demo if db is empty
-        setCategories([{ id: "1", name: "Food", icon_name: null, created_at: null }]);
-      }
-    });
-  }, []);
+  // Categories come live from Firestore. The fallback covers a project whose
+  // `categories` collection has not been seeded yet, so the form still offers a
+  // usable choice instead of an empty dropdown. Memoised so its identity stays
+  // stable — the reset effect below lists it as a dependency.
+  const { data: remoteCategories } = useCollection(COLLECTIONS.categories, mapCategory);
+  const categories = useMemo<Category[]>(
+    () =>
+      remoteCategories && remoteCategories.length > 0
+        ? remoteCategories
+        : [{ id: "1", name: "Food", icon_name: null, created_at: null }],
+    [remoteCategories],
+  );
 
   useEffect(() => {
     if (open) {
@@ -97,9 +101,10 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
     }
   }, [open, establishmentToEdit, categories]);
 
+  // [REF: ESTABLISHMENT_FORM_SAVE]
   const handleSave = async () => {
     if (!businessName.trim() || !barangay) {
-      alert("Business Name and Barangay are required.");
+      toast.error("Business Name and Barangay are required.");
       return;
     }
 
@@ -113,7 +118,7 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
         fullAddress: street.trim() ? `${street.trim()}, ${barangay}, ${psgcData.city}, ${psgcData.province}` : `${barangay}, ${psgcData.city}, ${psgcData.province}`
       };
 
-      const payload: Partial<DbEstablishment> = {
+      const payload: Partial<Establishment> = {
         business_name: businessName.trim(),
         owner_name: ownerName.trim() || null,
         address: addressPayload,
@@ -122,27 +127,33 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
         control_no: controlNo.trim() || null,
         category_id: categoryId,
         category: category,
-        is_synced: 0,
       };
 
+      // Written straight to Firestore. There is no local queue behind this: if
+      // the write throws, nothing was saved anywhere and the dialog stays open
+      // with the user's input intact so they can retry.
       if (establishmentToEdit) {
-        await db.establishments.update(establishmentToEdit.id, payload);
+        await saveEstablishment(establishmentToEdit.id, payload);
       } else {
-        await db.establishments.add({
-          id: crypto.randomUUID(),
+        await saveEstablishment(null, {
           ...payload,
           created_at: new Date().toISOString(),
           personnel_count: 0,
           personnel_with_hc: 0,
           qr_code_id: null,
-        } as DbEstablishment);
+        });
       }
 
+      toast.success(establishmentToEdit ? "Establishment updated." : "Establishment added.");
       onOpenChange(false);
       if (onSave) onSave();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to save establishment", error);
-      alert("Failed to save. Check console for details.");
+      toast.error(
+        navigator.onLine
+          ? error?.message || "Failed to save establishment."
+          : "You are offline — connect to the internet to save.",
+      );
     } finally {
       setLoading(false);
     }

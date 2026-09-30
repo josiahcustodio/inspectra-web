@@ -12,6 +12,7 @@ import { VerifyEmail } from "./pages/VerifyEmail";
 import { AuthGuard } from "./components/AuthGuard";
 import { useAuth } from "../lib/useAuth";
 
+// [REF: ROLE_REDIRECT]
 const RoleRedirect = () => {
   const { role, session, emailVerified, isLoading, error, retryProfile } = useAuth();
 
@@ -47,6 +48,7 @@ const RoleRedirect = () => {
   );
 };
 
+// [REF: WEB_ROUTE_MAP]
 export const router = createBrowserRouter([
   {
     path: "/login",

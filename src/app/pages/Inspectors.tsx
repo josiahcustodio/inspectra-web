@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -18,8 +18,16 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { User, Mail, Phone, ClipboardCheck, Award, Plus, Trash2, Pencil } from "lucide-react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, DbInspector } from "../../lib/db";
+import { useCollection } from "../../lib/useCollection";
+import {
+  COLLECTIONS,
+  deleteInspector,
+  mapInspectionLog,
+  mapInspector,
+  mapProfile,
+  saveInspector,
+} from "../../lib/firestore";
+import type { Inspector } from "../../lib/models";
 import { useAuth } from "../../lib/useAuth";
 import { toast } from "sonner";
 
@@ -44,10 +52,128 @@ const EMPTY_FORM = {
   performance: "Good",
 };
 
+// Synthetic rows (accounts and log-only inspectors) aren't documents in the
+// `inspectors` directory, so they can't be edited or deleted in place — the
+// admin can promote one into the directory instead.
+function isDirectoryEntry(inspector: Inspector): boolean {
+  return !inspector.id.startsWith("profile:") && !inspector.id.startsWith("log:");
+}
+
+// [REF: INSPECTOR_DIRECTORY]
+//
+// The list shown here is a merge of every place a real inspector can exist:
+//  1. the admin-curated `inspectors` directory,
+//  2. registered mobile accounts in `profiles` (readable by admins only — a
+//     permission error on that source just means it's unavailable, not that
+//     the page failed), and
+//  3. names found on submitted `inspection_logs`.
+// Inspection counts are always derived live from the logs, because no client
+// keeps the directory's counter fields up to date.
 export function Inspectors() {
-  const inspectors = useLiveQuery(() => db.inspectors.toArray()) ?? [];
+  const { data, error } = useCollection(COLLECTIONS.inspectors, mapInspector);
+  const { data: profiles } = useCollection(COLLECTIONS.profiles, mapProfile);
+  const { data: logs } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
+
+  const inspectors = useMemo(() => {
+    const directory = data ?? [];
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    // Per-inspector activity, keyed by the normalised `inspector_name` the
+    // mobile client stamps on each log (displayName, falling back to email).
+    const stats = new Map<string, { name: string; total: number; today: number }>();
+    for (const log of logs ?? []) {
+      const name = (log.inspector_name ?? "").trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      const s = stats.get(key) ?? { name, total: 0, today: 0 };
+      s.total += 1;
+      if (log.inspection_date?.startsWith(todayKey)) s.today += 1;
+      stats.set(key, s);
+    }
+    const claimStats = (...candidates: (string | null | undefined)[]) => {
+      for (const c of candidates) {
+        const key = c?.trim().toLowerCase();
+        if (!key) continue;
+        const s = stats.get(key);
+        if (s) {
+          stats.delete(key);
+          return s;
+        }
+      }
+      return null;
+    };
+
+    const merged: Inspector[] = [];
+    const seenEmails = new Set<string>();
+
+    for (const d of directory) {
+      if (d.email) seenEmails.add(d.email.trim().toLowerCase());
+      const s = claimStats(d.name, d.email);
+      merged.push({
+        ...d,
+        totalInspections: s ? Math.max(s.total, d.totalInspections) : d.totalInspections,
+        completedToday: s ? s.today : d.completedToday,
+      });
+    }
+
+    // Registered mobile accounts that aren't in the directory yet.
+    for (const p of profiles ?? []) {
+      if (p.role === "admin") continue;
+      const email = p.email.trim().toLowerCase();
+      if (!email || seenEmails.has(email)) continue;
+      seenEmails.add(email);
+      const s = claimStats(p.email, p.email.split("@")[0]);
+      merged.push({
+        id: `profile:${p.id}`,
+        name: s?.name ?? p.email.split("@")[0],
+        inspectorId: "Registered account",
+        email: p.email,
+        phone: "—",
+        status: "Active",
+        performance: "Unrated",
+        totalInspections: s?.total ?? 0,
+        completedToday: s?.today ?? 0,
+        updated_at: p.created_at ?? "",
+      });
+    }
+
+    // Inspectors who only exist as names on submitted logs.
+    for (const [key, s] of stats) {
+      merged.push({
+        id: `log:${key}`,
+        name: s.name,
+        inspectorId: "From inspection records",
+        email: s.name.includes("@") ? s.name : "—",
+        phone: "—",
+        status: "Active",
+        performance: "Unrated",
+        totalInspections: s.total,
+        completedToday: s.today,
+        updated_at: "",
+      });
+    }
+
+    return merged;
+  }, [data, profiles, logs]);
+
   const activeCount = inspectors.filter(i => i.status === "Active").length;
   const todayInspections = inspectors.reduce((acc, curr) => acc + (curr.completedToday || 0), 0);
+  // Most common performance rating across the team — computed from the real
+  // per-inspector `performance` field, not a hard-coded label.
+  const typicalPerformance = (() => {
+    const counts = new Map<string, number>();
+    for (const i of inspectors) {
+      if (i.performance && i.performance !== "Unrated") {
+        counts.set(i.performance, (counts.get(i.performance) ?? 0) + 1);
+      }
+    }
+    let best: string | null = null;
+    for (const [label, count] of counts) {
+      if (best === null || count > (counts.get(best) ?? 0)) best = label;
+    }
+    return best;
+  })();
   const { role } = useAuth();
   const isAdmin = role === "admin";
 
@@ -62,7 +188,19 @@ export function Inspectors() {
     setIsDialogOpen(true);
   }
 
-  function openEdit(inspector: DbInspector) {
+  // Promote a synthetic row (registered account / log-only name) into a real
+  // directory document: an "add" prefilled with what we already know.
+  function openAddFrom(inspector: Inspector) {
+    setForm({
+      ...EMPTY_FORM,
+      name: inspector.name,
+      email: inspector.email === "—" ? "" : inspector.email,
+    });
+    setEditingId(null);
+    setIsDialogOpen(true);
+  }
+
+  function openEdit(inspector: Inspector) {
     setForm({
       name: inspector.name,
       inspectorId: inspector.inspectorId,
@@ -82,29 +220,21 @@ export function Inspectors() {
     }
     setIsSaving(true);
     try {
-      const now = new Date().toISOString();
-      if (editingId) {
-        await db.inspectors.update(editingId, {
-          ...form,
-          is_synced: 0,
-          updated_at: now,
-        });
-        toast.success("Inspector updated.");
-      } else {
-        const newInspector: DbInspector = {
-          id: crypto.randomUUID(),
-          ...form,
-          totalInspections: 0,
-          completedToday: 0,
-          is_synced: 0,
-          updated_at: now,
-        };
-        await db.inspectors.add(newInspector);
-        toast.success("Inspector added.");
-      }
+      // Inspection counters belong to the inspection flow, not to this form.
+      // The write merges, so carry the current values through rather than
+      // letting an edit reset them to zero.
+      const existing = editingId ? inspectors.find((i) => i.id === editingId) : null;
+
+      await saveInspector(editingId, {
+        ...form,
+        totalInspections: existing?.totalInspections ?? 0,
+        completedToday: existing?.completedToday ?? 0,
+      });
+
+      toast.success(editingId ? "Inspector updated." : "Inspector added.");
       setIsDialogOpen(false);
     } catch (err: any) {
-      toast.error(err.message || "Failed to save inspector.");
+      toast.error(err?.message || "Failed to save inspector.");
     } finally {
       setIsSaving(false);
     }
@@ -112,8 +242,12 @@ export function Inspectors() {
 
   async function handleDelete(id: string) {
     if (!confirm("Are you sure you want to delete this inspector?")) return;
-    await db.inspectors.delete(id);
-    toast.success("Inspector deleted.");
+    try {
+      await deleteInspector(id);
+      toast.success("Inspector deleted.");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete inspector.");
+    }
   }
 
   return (
@@ -149,16 +283,28 @@ export function Inspectors() {
           <h3 className="font-black text-slate-900 text-2xl">{todayInspections}</h3>
         </Card>
         <Card className="p-4 bg-white rounded-xl">
-          <p className="text-muted-foreground font-bold text-sm mb-1">Avg. Performance</p>
+          <p className="text-muted-foreground font-bold text-sm mb-1">Typical Performance</p>
           <h3 className="font-black text-primary text-2xl">
-            {inspectors.length > 0 ? "Excellent" : "N/A"}
+            {typicalPerformance ?? "N/A"}
           </h3>
         </Card>
       </div>
 
       {/* Inspector List */}
       <div className="grid grid-cols-1 gap-4">
-        {inspectors.length === 0 ? (
+        {error ? (
+          <Card className="p-12 bg-white rounded-xl text-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center">
+                <User className="w-7 h-7 text-amber-500" />
+              </div>
+              <p className="text-muted-foreground font-bold">Couldn't load the inspector list.</p>
+              <p className="text-sm text-muted-foreground">
+                This directory is read live from the server — check your connection.
+              </p>
+            </div>
+          </Card>
+        ) : inspectors.length === 0 ? (
           <Card className="p-12 bg-white rounded-xl text-center">
             <div className="flex flex-col items-center gap-3">
               <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
@@ -205,11 +351,6 @@ export function Inspectors() {
                         <Award className="w-3 h-3" />
                         {inspector.performance}
                       </span>
-                      {inspector.is_synced === 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-600 border border-amber-200">
-                          Pending Sync
-                        </span>
-                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm mb-3">
                       <div className="flex items-center gap-2 text-muted-foreground font-medium">
@@ -238,24 +379,38 @@ export function Inspectors() {
                 </div>
                 {isAdmin && (
                   <div className="flex gap-2 flex-shrink-0 ml-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-border hover:bg-slate-50 font-bold"
-                      onClick={() => openEdit(inspector)}
-                    >
-                      <Pencil className="w-4 h-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-red-200 text-red-600 hover:bg-red-50 font-bold"
-                      onClick={() => handleDelete(inspector.id)}
-                    >
-                      <Trash2 className="w-4 h-4 mr-1" />
-                      Delete
-                    </Button>
+                    {isDirectoryEntry(inspector) ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-border hover:bg-slate-50 font-bold"
+                          onClick={() => openEdit(inspector)}
+                        >
+                          <Pencil className="w-4 h-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-red-200 text-red-600 hover:bg-red-50 font-bold"
+                          onClick={() => handleDelete(inspector.id)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          Delete
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-border hover:bg-slate-50 font-bold"
+                        onClick={() => openAddFrom(inspector)}
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add to directory
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>

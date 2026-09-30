@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
 import { signOut } from "firebase/auth";
 import { auth } from "../../lib/firebase";
-import { useSync } from "../../lib/SyncProvider";
+import { useConnection } from "../../lib/ConnectionProvider";
 import { useAuth } from "../../lib/useAuth";
 import {
   LayoutDashboard,
@@ -11,13 +11,11 @@ import {
   Map,
   Users,
   Settings as SettingsIcon,
-  Search,
   User,
   Menu,
   ChevronLeft,
   LogOut
 } from "lucide-react";
-import { Input } from "./ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,12 +36,14 @@ const baseNavItems = [
 
 
 
+// [REF: ADMIN_SHELL]
 export function Layout() {
-  const { isOnline, isSyncing } = useSync();
+  const { isOnline } = useConnection();
   const { role, user } = useAuth();
   const navigate = useNavigate();
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
 
+  // [REF: ROLE_NAV]
   const rolePrefix = role === 'admin' ? '/admin' : '/officer';
   const navItems = baseNavItems.map(item => ({ ...item, path: `${rolePrefix}/${item.path}` }));
 
@@ -74,7 +74,6 @@ export function Layout() {
             <NavLink
               key={item.path}
               to={item.path}
-              end={item.path === "/"}
               title={!isSidebarExpanded ? item.label : undefined}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-bold ${
@@ -94,24 +93,13 @@ export function Layout() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
         {/* Header */}
-        <header className="bg-white px-8 py-4 flex items-center justify-between shadow-[0_4px_24px_rgba(0,0,0,0.02)] z-10">
-          <div className="flex-1 max-w-xl relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-500" />
-            <Input
-              type="text"
-              placeholder="Search by name, ID, or barangay..."
-              className="pl-10 bg-slate-100 border-none shadow-inner text-slate-900 font-medium placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-primary/20"
-            />
-          </div>
+        <header className="bg-white px-8 py-4 flex items-center justify-end shadow-[0_4px_24px_rgba(0,0,0,0.02)] z-10">
           <div className="flex items-center gap-4">
             {!isOnline && (
               <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-bold border border-amber-100">
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                Offline Mode
+                No connection
               </div>
-            )}
-            {isSyncing && (
-              <span className="text-xs text-slate-600 font-bold animate-pulse">Syncing...</span>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger className="flex items-center gap-3 outline-none rounded-full focus-visible:ring-2 focus-visible:ring-primary/20">
@@ -143,16 +131,22 @@ export function Layout() {
 
         {/* Page Content */}
         <main className="flex-1 overflow-hidden flex flex-col">
-          {/* Offline Warning Banner */}
+          {/* [REF: OFFLINE_BANNER] Connection warning. The app reads and writes
+              straight to the cloud, so without a connection there is nothing to
+              show and nothing can be saved — say so plainly rather than letting
+              screens look empty. */}
           {!isOnline && (
             <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5 flex items-center gap-3">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
               <p className="text-sm text-amber-800 font-medium">
-                You are offline. Data is being saved locally and will sync automatically when your connection is restored.
+                You are offline. This app needs an internet connection — records won't load or save until you reconnect.
               </p>
             </div>
           )}
-          <div className="p-6 flex-1 overflow-hidden min-h-0">
+          {/* The shell (html/body and every ancestor here) is overflow-hidden;
+              this wrapper is the ONE scroll container for page content, so
+              anything taller than the viewport scrolls here. */}
+          <div className="p-6 flex-1 overflow-y-auto min-h-0">
             <Outlet />
           </div>
         </main>

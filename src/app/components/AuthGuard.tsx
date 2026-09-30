@@ -5,6 +5,7 @@ interface AuthGuardProps {
   allowedRoles?: ('admin' | 'officer')[];
 }
 
+// [REF: WEB_AUTH_GUARD]
 export function AuthGuard({ allowedRoles }: AuthGuardProps) {
   const { session, role, emailVerified, isLoading, error, retryProfile } = useAuth();
   const location = useLocation();

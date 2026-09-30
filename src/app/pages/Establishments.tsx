@@ -1,17 +1,19 @@
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Building2, Eye, CalendarPlus, Edit2 } from "lucide-react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, DbEstablishment } from "../../lib/db";
+import { Building2, Edit2 } from "lucide-react";
+import { useCollection } from "../../lib/useCollection";
+import { COLLECTIONS, mapEstablishment } from "../../lib/firestore";
+import type { Establishment } from "../../lib/models";
 import { useState } from "react";
 import { AddEstablishmentModal } from "../components/AddEstablishmentModal";
 
 export function Establishments() {
-  const establishments = useLiveQuery(() => db.establishments.toArray()) ?? [];
+  const { data, isLoading, error } = useCollection(COLLECTIONS.establishments, mapEstablishment);
+  const establishments = data ?? [];
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedEstablishment, setSelectedEstablishment] = useState<DbEstablishment | null>(null);
+  const [selectedEstablishment, setSelectedEstablishment] = useState<Establishment | null>(null);
 
-  const handleOpenModal = (establishment?: DbEstablishment) => {
+  const handleOpenModal = (establishment?: Establishment) => {
     setSelectedEstablishment(establishment || null);
     setIsModalOpen(true);
   };
@@ -29,13 +31,24 @@ export function Establishments() {
       </div>
 
       <Card className="flex-1 overflow-hidden flex flex-col bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border">
-        {establishments.length === 0 ? (
+        {isLoading ? (
           <div className="p-12 text-center my-auto">
-            <p className="text-muted-foreground font-bold">No establishments found locally.</p>
-            <p className="text-sm text-muted-foreground font-medium mt-1">Wait for sync or add a new one.</p>
+            <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto" />
+            <p className="text-sm text-muted-foreground font-medium mt-4">Loading establishments...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center my-auto">
+            <p className="text-muted-foreground font-bold">Couldn't load establishments.</p>
+            <p className="text-sm text-muted-foreground font-medium mt-1">Check your connection — this list is read live from the server.</p>
+          </div>
+        ) : establishments.length === 0 ? (
+          <div className="p-12 text-center my-auto">
+            <p className="text-muted-foreground font-bold">No establishments yet.</p>
+            <p className="text-sm text-muted-foreground font-medium mt-1">Add one to get started.</p>
           </div>
         ) : (
           <div className="flex-1 overflow-auto min-h-0">
+            {/* [REF: ESTABLISHMENT_LIST] */}
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 bg-white z-10 shadow-sm border-b border-border">
                 <tr>
@@ -78,14 +91,8 @@ export function Establishments() {
                     </td>
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
-                        <Button variant="outline" size="icon" className="h-8 w-8 border-border text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 shadow-sm" title="View Details">
-                          <Eye className="w-4 h-4" />
-                        </Button>
                         <Button variant="outline" size="icon" onClick={() => handleOpenModal(establishment)} className="h-8 w-8 border-border text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 shadow-sm" title="Edit Establishment">
                           <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button size="icon" className="h-8 w-8 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm" title="Schedule Inspection">
-                          <CalendarPlus className="w-4 h-4" />
                         </Button>
                       </div>
                     </td>

@@ -33,6 +33,7 @@ export function Login() {
 
   if (session) return null;
 
+  // [REF: WEB_SIGNIN_EMAIL]
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
@@ -70,6 +71,7 @@ export function Login() {
     }
   };
 
+  // [REF: WEB_MFA_CHALLENGE]
   const handleMfaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mfaResolver || mfaCode.length !== 6) return;

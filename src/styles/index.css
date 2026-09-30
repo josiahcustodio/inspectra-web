@@ -1,3 +1,7 @@
+/* [REF: WEB_STYLE_ENTRY]
+   The one stylesheet main.tsx loads. It pulls in, in order: the Inter
+   webfont, Tailwind itself (plus tw-animate-css for the open/close
+   animations the Radix components use), and the design tokens. */
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
