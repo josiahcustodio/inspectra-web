@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, memoryLocalCache } from "firebase/firestore";
 
+// [REF: WEB_FIREBASE_INIT]
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -15,4 +16,12 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const firebaseDb = getFirestore(app);
+
+// Cloud-only by construction: an in-memory cache lives for the lifetime of the
+// tab and nothing survives a reload, so the app can never serve stale documents
+// from disk or accept a write it cannot deliver. Stated explicitly rather than
+// left to the SDK default so that turning persistence back on has to be a
+// deliberate edit here.
+export const firebaseDb = initializeFirestore(app, {
+  localCache: memoryLocalCache(),
+});

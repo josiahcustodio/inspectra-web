@@ -1,3 +1,11 @@
+/* [REF: WEB_DESIGN_TOKENS]
+   Every colour, radius and font size the web admin uses, as CSS variables.
+   Change a value here and it changes everywhere that reads the token —
+   see the caveat in the architecture guide (§5.12) about the screens that
+   hardcode their own hex instead.
+
+   The .dark block below is complete but currently unreachable: nothing in
+   the app ever adds the `dark` class to the page (§5.11). */
 @custom-variant dark (&:is(.dark *));
 
 :root {

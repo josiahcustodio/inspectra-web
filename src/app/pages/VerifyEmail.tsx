@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "../components/ui/button";
 import { ShieldCheck, MailCheck } from "lucide-react";
@@ -14,6 +14,15 @@ export function VerifyEmail() {
   const { user, session, emailVerified, isLoading, refreshUser } = useAuth();
   const [isChecking, setIsChecking] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const cooldownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Stop the resend-cooldown ticker if the page unmounts mid-countdown,
+  // so it doesn't keep firing setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (cooldownTimer.current) clearInterval(cooldownTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !session) navigate("/login", { replace: true });
@@ -31,10 +40,11 @@ export function VerifyEmail() {
       await sendEmailVerification(auth.currentUser);
       toast.success("Verification email sent");
       setCooldown(RESEND_COOLDOWN_SECONDS);
-      const timer = setInterval(() => {
+      if (cooldownTimer.current) clearInterval(cooldownTimer.current);
+      cooldownTimer.current = setInterval(() => {
         setCooldown((prev) => {
           if (prev <= 1) {
-            clearInterval(timer);
+            if (cooldownTimer.current) clearInterval(cooldownTimer.current);
             return 0;
           }
           return prev - 1;
@@ -45,6 +55,7 @@ export function VerifyEmail() {
     }
   };
 
+  // [REF: EMAIL_VERIFICATION_CHECK]
   const handleCheckVerified = async () => {
     setIsChecking(true);
     try {

@@ -44,6 +44,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
+    // [REF: WEB_PROFILE_BOOTSTRAP]
     const loadProfile = async (user: User) => {
       try {
         // Get Role from profiles collection
@@ -119,6 +120,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await loadProfile(auth.currentUser);
     };
 
+    // [REF: WEB_AUTH_STATE]
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         if (mounted) {

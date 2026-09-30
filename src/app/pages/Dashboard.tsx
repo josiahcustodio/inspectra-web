@@ -1,7 +1,5 @@
 import { useMemo } from "react";
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { TrendingUp, Building2, ClipboardCheck, AlertTriangle, ArrowRight } from "lucide-react";
+import { Building2, ClipboardCheck, AlertTriangle } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -15,23 +13,23 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../../lib/db";
+import { useCollection } from "../../lib/useCollection";
+import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "../../lib/firestore";
 
-function computeGrade(rating: number | null): string {
-  if (rating === null) return "-";
-  if (rating >= 90) return "A";
-  if (rating >= 70) return "B";
-  return "F";
-}
-
-// Glassmorphism classes for reusability
+// [REF: CARD_SURFACE_STYLE]
+// The only shared style constant in the web app. Every other screen spells
+// its classes out inline, which is why a visual change usually means editing
+// several files rather than one.
 const glassCard = "bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden cursor-pointer dark:backdrop-blur-xl dark:bg-white/5 dark:border-white/10";
 
 export function Dashboard() {
-  const establishments = useLiveQuery(() => db.establishments.toArray());
-  const inspectionLogs = useLiveQuery(() => db.inspection_logs.toArray());
+  // Live Firestore subscriptions — both stay `undefined` until their first
+  // snapshot lands, which is what keeps the KPI block showing zeroes instead of
+  // a half-computed figure while the data is still in flight.
+  const { data: establishments } = useCollection(COLLECTIONS.establishments, mapEstablishment);
+  const { data: inspectionLogs } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
 
+  // [REF: KPI_STATS]
   const stats = useMemo(() => {
     if (!establishments || !inspectionLogs) {
       return {
@@ -156,8 +154,7 @@ export function Dashboard() {
             </div>
           </div>
           <div className="mt-2 flex items-center gap-1">
-            <TrendingUp className="w-3 h-3 text-emerald-600" />
-            <span className="text-xs text-emerald-600 font-bold">100% of target covered</span>
+            <span className="text-xs text-muted-foreground font-bold">Across Batangas City</span>
           </div>
         </div>
 
@@ -190,9 +187,7 @@ export function Dashboard() {
             </div>
           </div>
           <div className="relative z-10 mt-2 flex items-center gap-2">
-            <Button size="sm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md transition-colors font-bold text-xs h-8">
-              Dispatch Re-inspection <ArrowRight className="ml-1 w-3 h-3"/>
-            </Button>
+            <span className="text-xs font-bold text-destructive/70">Barangays averaging below 70% on their inspections</span>
           </div>
         </div>
       </div>
@@ -210,6 +205,7 @@ export function Dashboard() {
           </div>
           <div className="flex-1 min-h-0 w-full">
             <ResponsiveContainer width="100%" height="100%">
+              {/* [REF: BAR_GRAPH] */}
               <BarChart data={barangayData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                 <XAxis dataKey="name" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={60} />
@@ -247,6 +243,7 @@ export function Dashboard() {
               {/* Left: Donut Chart with fixed aspect ratio */}
               <div className="w-[120px] h-[120px] aspect-square flex-shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
+                  {/* [REF: PIE_GRAPH] */}
                   <PieChart>
                     <Pie
                       data={chartData}

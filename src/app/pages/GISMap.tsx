@@ -1,44 +1,70 @@
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { MapPin, Layers, Search, AlertTriangle, Clock, User as UserIcon, X, Crosshair } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { MapPin, Layers, Search, AlertTriangle, ChevronLeft, Crosshair } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { useCollection } from "../../lib/useCollection";
+import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "../../lib/firestore";
+import {
+  BARANGAY_BOUNDARIES,
+  BARANGAY_NAMES,
+  CITY_CENTER,
+  barangayOfEstablishment,
+  canonicalBarangay,
+  normalizeBarangay,
+} from "../../lib/barangayGeo";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-// Fix default marker icon issue with Vite + Leaflet
-// @ts-ignore
-import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
-// @ts-ignore
-import markerIcon from "leaflet/dist/images/marker-icon.png";
-// @ts-ignore
-import markerShadow from "leaflet/dist/images/marker-shadow.png";
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconUrl: markerIcon,
-  iconRetinaUrl: markerIcon2x,
-  shadowUrl: markerShadow,
-});
+// [REF: GIS_BARANGAY_MODEL]
+//
+// The map works at barangay level, not at individual-establishment level.
+// Nothing writes latitude/longitude on an establishment (see models.ts), so
+// plotting one pin per business was never going to show anything — the page
+// rendered an empty map on every load. Every establishment does carry a
+// barangay, and the barangay boundaries are real PSA/PSGC polygons, so this
+// aggregates by barangay: click or search one, and its compliance breakdown
+// appears on the right.
 
-const mapPins = [
-  { id: 1, lat: 13.7565, lng: 121.0583, score: 92, grade: "A", name: "Golden Fortune Restaurant", barangay: "Poblacion", inspector: "Inspector 01", lastInspected: "2 hours ago", status: "Excellent" },
-  { id: 2, lat: 13.7650, lng: 121.0601, score: 88, grade: "A", name: "Batangas Bay Hotel", barangay: "Cuta", inspector: "Inspector 03", lastInspected: "5 hours ago", status: "Excellent" },
-  { id: 3, lat: 13.7485, lng: 121.0505, score: 75, grade: "B", name: "Quick Bites Cafeteria", barangay: "Kumintang Ibaba", inspector: "Inspector 02", lastInspected: "1 day ago", status: "Satisfactory" },
-  { id: 4, lat: 13.7520, lng: 121.0450, score: 58, grade: "C", name: "Ocean View Eatery", barangay: "Santa Clara", inspector: "Inspector 04", lastInspected: "2 days ago", status: "Needs Re-inspection" },
-  { id: 5, lat: 13.7600, lng: 121.0700, score: 95, grade: "A", name: "Sunrise Bakery", barangay: "Gulod Labac", inspector: "Inspector 01", lastInspected: "3 hours ago", status: "Excellent" },
-  { id: 6, lat: 13.7710, lng: 121.0650, score: 72, grade: "B", name: "City Market", barangay: "Kumintang Ilaya", inspector: "Inspector 03", lastInspected: "6 hours ago", status: "Satisfactory" },
-  { id: 7, lat: 13.7450, lng: 121.0620, score: 45, grade: "F", name: "Old Town Diner", barangay: "Wawa", inspector: "Inspector 02", lastInspected: "1 day ago", status: "Critical - Failed" },
-  { id: 8, lat: 13.7800, lng: 121.0550, score: 93, grade: "A", name: "Fresh Mart Supermarket", barangay: "Alangilan", inspector: "Inspector 04", lastInspected: "4 hours ago", status: "Excellent" },
-  { id: 9, lat: 13.7550, lng: 121.0650, score: 78, grade: "B", name: "Central Plaza Food Court", barangay: "Poblacion", inspector: "Inspector 01", lastInspected: "8 hours ago", status: "Satisfactory" },
-  { id: 10, lat: 13.7750, lng: 121.0400, score: 91, grade: "A", name: "Harbor View Restaurant", barangay: "Bolbok", inspector: "Inspector 03", lastInspected: "5 hours ago", status: "Excellent" },
-  { id: 11, lat: 13.7650, lng: 121.0750, score: 62, grade: "C", name: "Street Food Corner", barangay: "San Isidro", inspector: "Inspector 02", lastInspected: "1 day ago", status: "Needs Re-inspection" },
-  { id: 12, lat: 13.7850, lng: 121.0600, score: 96, grade: "A", name: "University Cafeteria", barangay: "Alangilan", inspector: "Inspector 04", lastInspected: "3 hours ago", status: "Excellent" },
-  { id: 13, lat: 13.7420, lng: 121.0550, score: 68, grade: "C", name: "Riverside Grill", barangay: "Malitam", inspector: "Inspector 01", lastInspected: "12 hours ago", status: "Needs Re-inspection" },
-  { id: 14, lat: 13.7500, lng: 121.0700, score: 82, grade: "B", name: "Downtown Café", barangay: "Pallocan West", inspector: "Inspector 03", lastInspected: "7 hours ago", status: "Satisfactory" },
-  { id: 15, lat: 13.7600, lng: 121.0500, score: 48, grade: "F", name: "Night Market Stalls", barangay: "Poblacion", inspector: "Inspector 02", lastInspected: "18 hours ago", status: "Critical - Failed" },
-];
+/// One establishment as listed under its barangay. `score` is null when the
+/// establishment has never been inspected — that is a distinct state from a
+/// score of zero, and the two are counted separately below.
+interface EstablishmentRow {
+  id: string;
+  name: string;
+  score: number | null;
+  inspector: string | null;
+  lastInspected: string;
+}
 
-type Pin = typeof mapPins[0];
+interface BarangayStats {
+  name: string;
+  total: number;
+  /// Latest inspection rated a perfect 100%.
+  compliant: number;
+  /// Latest inspection rated 70–99%: passing, with deficiencies noted.
+  moderate: number;
+  /// Latest inspection rated below 70%.
+  highRisk: number;
+  /// Registered, but never inspected. Not a failure.
+  notInspected: number;
+  /// Mean of the inspected establishments' scores; null when none is inspected.
+  avgScore: number | null;
+  establishments: EstablishmentRow[];
+}
+
+function emptyStats(name: string): BarangayStats {
+  return {
+    name,
+    total: 0,
+    compliant: 0,
+    moderate: 0,
+    highRisk: 0,
+    notInspected: 0,
+    avgScore: null,
+    establishments: [],
+  };
+}
 
 function getScoreColor(score: number) {
   if (score >= 90) return "#87A96B";
@@ -46,76 +72,204 @@ function getScoreColor(score: number) {
   return "#DC143C";
 }
 
-function getStatusBadge(status: string, score: number) {
-  if (score < 70) return { icon: "⚠️", text: status, color: "#DC143C", bg: "#fee" };
-  if (score < 90) return { icon: "⚡", text: status, color: "#DAA520", bg: "#fffbeb" };
-  return { icon: "✓", text: status, color: "#87A96B", bg: "#f0f4ed" };
+/// The fill for a barangay under risk shading, mirroring the three stat
+/// buckets: any high-risk establishment dominates, then any moderate one.
+function riskColor(stats: BarangayStats) {
+  if (stats.highRisk > 0) return "#DC143C";
+  if (stats.moderate > 0) return "#DAA520";
+  if (stats.compliant > 0) return "#059669";
+  return "#94a3b8";
 }
 
-function createCustomIcon(score: number, isSelected: boolean) {
-  const color = getScoreColor(score);
-  const size = isSelected ? 44 : 32;
-  const html = `
-    <div style="position:relative;width:${size}px;height:${size + 10}px;">
-      <div style="
-        width:${size}px;height:${size}px;border-radius:50%;
-        background:${color};border:4px solid white;
-        box-shadow:0 4px 12px rgba(0,0,0,0.3);
-        display:flex;align-items:center;justify-content:center;
-        ${isSelected ? 'box-shadow:0 6px 20px rgba(0,0,0,0.4);' : ''}
-      ">
-        <div style="width:8px;height:8px;background:white;border-radius:50%;"></div>
-      </div>
-      <div style="
-        position:absolute;left:50%;top:${size - 4}px;transform:translateX(-50%);
-        width:0;height:0;
-        border-left:7px solid transparent;
-        border-right:7px solid transparent;
-        border-top:10px solid ${color};
-        filter:drop-shadow(0 2px 2px rgba(0,0,0,0.2));
-      "></div>
-      ${isSelected ? `<div style="
-        position:absolute;top:0;left:0;width:${size}px;height:${size}px;
-        border-radius:50%;background:${color};opacity:0.3;
-        animation:ping 1s cubic-bezier(0,0,0.2,1) infinite;
-      "></div>` : ''}
-    </div>
-  `;
-  return L.divIcon({
-    className: "",
-    html,
-    iconSize: [size, size + 10],
-    iconAnchor: [size / 2, size + 10],
-  });
+/// "3 hours ago" from an ISO timestamp.
+function relativeTime(iso: string | null | undefined) {
+  if (!iso) return "Never inspected";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "Unknown";
+  const mins = Math.floor((Date.now() - then) / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+// [REF: GIS_MAP]
 export function GISMap() {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<Map<number, L.Marker>>(new Map());
-  const heatCirclesRef = useRef<L.Circle[]>([]);
+  const geoLayerRef = useRef<L.GeoJSON | null>(null);
+  const layersByNameRef = useRef<Map<string, L.Path>>(new Map());
 
-  const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
-  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [shadingEnabled, setShadingEnabled] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const passedCount = mapPins.filter(p => p.score >= 90).length;
-  const warningCount = mapPins.filter(p => p.score >= 70 && p.score < 90).length;
-  const failedCount = mapPins.filter(p => p.score < 70).length;
+  const { data: establishments } = useCollection(COLLECTIONS.establishments, mapEstablishment);
+  const { data: inspectionLogs } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
 
-  const filteredSuggestions = mapPins.filter(pin =>
-    pin.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    pin.barangay.toLowerCase().includes(searchQuery.toLowerCase())
-  ).slice(0, 5);
+  const isLoading = establishments === undefined || inspectionLogs === undefined;
 
-  // Initialize the Leaflet map once
+  // [REF: GIS_BARANGAY_AGGREGATION]
+  // Join every establishment to its most recent inspection, then group by the
+  // barangay boundary its stored barangay name resolves to. An establishment
+  // whose barangay matches no boundary is reported separately rather than being
+  // attributed to a neighbouring one.
+  const { byBarangay, citywide, unmapped } = useMemo(() => {
+    const byBarangay = new Map<string, BarangayStats>();
+    const citywide = emptyStats("Batangas City");
+    const unmapped = new Map<string, number>();
+
+    if (!establishments || !inspectionLogs) {
+      return { byBarangay, citywide, unmapped };
+    }
+
+    const latestByEst = new Map<string, any>();
+    for (const log of inspectionLogs) {
+      if (!log.establishment_id) continue;
+      const prev = latestByEst.get(log.establishment_id);
+      const t = new Date(log.inspection_date ?? 0).getTime();
+      const prevT = prev ? new Date(prev.inspection_date ?? 0).getTime() : -1;
+      if (!prev || t > prevT) latestByEst.set(log.establishment_id, log);
+    }
+
+    // Running totals for the average, kept alongside each bucket so a barangay
+    // with no inspected establishment reports null rather than a misleading 0.
+    const scoreSums = new Map<string, { total: number; count: number }>();
+    let citySum = 0;
+    let cityCount = 0;
+
+    for (const est of establishments) {
+      const raw = barangayOfEstablishment(est);
+      const name = canonicalBarangay(raw);
+
+      if (!name) {
+        const label = raw?.trim() || "(no barangay recorded)";
+        unmapped.set(label, (unmapped.get(label) ?? 0) + 1);
+        continue;
+      }
+
+      let stats = byBarangay.get(name);
+      if (!stats) {
+        stats = emptyStats(name);
+        byBarangay.set(name, stats);
+      }
+
+      const log = latestByEst.get(est.id);
+      const score = typeof log?.percentage_rating === "number" ? log.percentage_rating : null;
+
+      stats.total++;
+      citywide.total++;
+
+      if (score === null) {
+        stats.notInspected++;
+        citywide.notInspected++;
+      } else {
+        if (score >= 100) {
+          stats.compliant++;
+          citywide.compliant++;
+        } else if (score >= 70) {
+          stats.moderate++;
+          citywide.moderate++;
+        } else {
+          stats.highRisk++;
+          citywide.highRisk++;
+        }
+
+        const sum = scoreSums.get(name) ?? { total: 0, count: 0 };
+        sum.total += score;
+        sum.count++;
+        scoreSums.set(name, sum);
+        citySum += score;
+        cityCount++;
+      }
+
+      stats.establishments.push({
+        id: est.id,
+        name: est.business_name,
+        score,
+        inspector: log?.inspector_name ?? null,
+        lastInspected: relativeTime(log?.inspection_date),
+      });
+    }
+
+    for (const [name, sum] of scoreSums) {
+      const stats = byBarangay.get(name);
+      if (stats && sum.count > 0) stats.avgScore = Math.round(sum.total / sum.count);
+    }
+    if (cityCount > 0) citywide.avgScore = Math.round(citySum / cityCount);
+
+    for (const stats of byBarangay.values()) {
+      // Worst first, so the establishments that need attention are on top;
+      // never-inspected ones sit at the bottom.
+      stats.establishments.sort((a, b) => (a.score ?? 101) - (b.score ?? 101));
+    }
+
+    return { byBarangay, citywide, unmapped };
+  }, [establishments, inspectionLogs]);
+
+  const maxCount = useMemo(
+    () => Math.max(1, ...[...byBarangay.values()].map((s) => s.total)),
+    [byBarangay],
+  );
+
+  const unmappedTotal = useMemo(
+    () => [...unmapped.values()].reduce((a, b) => a + b, 0),
+    [unmapped],
+  );
+
+  const selectedStats = selected ? byBarangay.get(selected) ?? emptyStats(selected) : null;
+  const panelStats = selectedStats ?? citywide;
+
+  const suggestions = useMemo(() => {
+    const q = normalizeBarangay(searchQuery);
+    if (!q) return [];
+    return BARANGAY_NAMES.filter((n) => normalizeBarangay(n).includes(q)).slice(0, 6);
+  }, [searchQuery]);
+
+  // Selection is read inside Leaflet event handlers, which are bound once when
+  // the layer is built — a ref keeps them looking at the current value without
+  // rebuilding 105 polygons on every click.
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selected;
+
+  const styleFor = (name: string, hovered: boolean): L.PathOptions => {
+    const stats = byBarangay.get(name);
+    const count = stats?.total ?? 0;
+    const isSelected = selectedRef.current === name;
+
+    let fillColor = "#94a3b8";
+    let fillOpacity = 0.08;
+
+    if (count > 0) {
+      const density = count / maxCount;
+      fillColor = shadingEnabled ? riskColor(stats!) : "#059669";
+      fillOpacity = 0.25 + density * 0.4;
+    }
+
+    return {
+      color: isSelected ? "#0f172a" : hovered ? "#334155" : "#ffffff",
+      weight: isSelected ? 3 : hovered ? 2 : 1,
+      opacity: 1,
+      fillColor,
+      fillOpacity: isSelected ? Math.min(fillOpacity + 0.15, 0.9) : fillOpacity,
+    };
+  };
+  // Read by the Leaflet handlers, same reasoning as selectedRef.
+  const styleForRef = useRef(styleFor);
+  styleForRef.current = styleFor;
+
+  // Initialise the map and draw the barangay boundaries once. The boundaries are
+  // static reference data, so the layer is built a single time and only
+  // restyled afterwards.
   useEffect(() => {
     if (!mapRef.current || leafletMapRef.current) return;
 
     const map = L.map(mapRef.current, {
-      center: [13.7600, 121.0550],
-      zoom: 14,
+      center: CITY_CENTER,
+      zoom: 12,
       zoomControl: true,
     });
 
@@ -124,92 +278,96 @@ export function GISMap() {
       maxZoom: 19,
     }).addTo(map);
 
-    // Add markers
-    mapPins.forEach((pin) => {
-      const marker = L.marker([pin.lat, pin.lng], {
-        icon: createCustomIcon(pin.score, false),
-      }).addTo(map);
+    const layer = L.geoJSON(BARANGAY_BOUNDARIES, {
+      style: (feature) => styleForRef.current(feature?.properties.name ?? "", false),
+      onEachFeature: (feature, lyr) => {
+        const name = feature.properties.name as string;
+        layersByNameRef.current.set(name, lyr as L.Path);
 
-      marker.on("click", () => {
-        setSelectedPin(pin);
-      });
+        lyr.on("click", () => setSelected(name));
+        lyr.on("mouseover", () => {
+          (lyr as L.Path).setStyle(styleForRef.current(name, true));
+          (lyr as L.Path).bringToFront();
+        });
+        lyr.on("mouseout", () => {
+          (lyr as L.Path).setStyle(styleForRef.current(name, false));
+        });
+        lyr.bindTooltip(name, { sticky: true, direction: "top", className: "font-bold" });
+      },
+    }).addTo(map);
 
-      markersRef.current.set(pin.id, marker);
-    });
+    map.fitBounds(layer.getBounds(), { padding: [20, 20] });
 
     leafletMapRef.current = map;
+    geoLayerRef.current = layer;
 
     return () => {
       map.remove();
       leafletMapRef.current = null;
-      markersRef.current.clear();
+      geoLayerRef.current = null;
+      layersByNameRef.current.clear();
     };
   }, []);
 
-  // Update marker icons when selection changes
+  // Restyle in place when the counts, the selection or the shading toggle
+  // change. Rebuilding the layer here would drop hover state and re-run
+  // fitBounds on every Firestore snapshot.
   useEffect(() => {
-    markersRef.current.forEach((marker, id) => {
-      const pin = mapPins.find(p => p.id === id);
-      if (pin) {
-        marker.setIcon(createCustomIcon(pin.score, selectedPin?.id === id));
-      }
+    layersByNameRef.current.forEach((lyr, name) => {
+      lyr.setStyle(styleFor(name, false));
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [byBarangay, maxCount, selected, shadingEnabled]);
 
-    if (selectedPin && leafletMapRef.current) {
-      leafletMapRef.current.flyTo([selectedPin.lat, selectedPin.lng], 16, {
-        animate: true,
-        duration: 1,
-      });
-    }
-  }, [selectedPin]);
-
-  // Toggle heatmap circles
+  // Frame whatever is selected — the barangay, or the whole city when cleared.
   useEffect(() => {
     const map = leafletMapRef.current;
-    if (!map) return;
+    const layer = geoLayerRef.current;
+    if (!map || !layer) return;
 
-    heatCirclesRef.current.forEach(c => c.remove());
-    heatCirclesRef.current = [];
-
-    if (heatmapEnabled) {
-      mapPins.filter(p => p.score < 70).forEach(pin => {
-        const circle = L.circle([pin.lat, pin.lng], {
-          radius: 500,
-          color: "transparent",
-          fillColor: "#DC143C",
-          fillOpacity: 0.22,
-        }).addTo(map);
-        heatCirclesRef.current.push(circle);
-      });
+    if (selected) {
+      const target = layersByNameRef.current.get(selected);
+      if (target) map.flyToBounds((target as any).getBounds(), { padding: [60, 60], duration: 0.8 });
+    } else {
+      map.flyToBounds(layer.getBounds(), { padding: [20, 20], duration: 0.8 });
     }
-  }, [heatmapEnabled]);
+  }, [selected]);
 
-  const centerMap = () => {
-    setSelectedPin(null);
-    setSearchQuery("");
-    leafletMapRef.current?.flyTo([13.7600, 121.0550], 14, { animate: true, duration: 1 });
+  const selectBarangay = (name: string) => {
+    setSelected(name);
+    setSearchQuery(name);
+    setShowSuggestions(false);
   };
+
+  const resetView = () => {
+    setSelected(null);
+    setSearchQuery("");
+  };
+
+  const tooltipCounts = (name: string) => byBarangay.get(name)?.total ?? 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Live City Health Monitor</h2>
-          <p className="text-muted-foreground mt-1 font-medium">Real-time geographic visualization · Batangas City</p>
+          <p className="text-muted-foreground mt-1 font-medium">
+            Compliance by barangay · Batangas City
+          </p>
         </div>
         <Button
           variant="outline"
-          className={`gap-2 ${heatmapEnabled ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border-border hover:bg-slate-50"}`}
-          onClick={() => setHeatmapEnabled(!heatmapEnabled)}
+          className={`gap-2 ${shadingEnabled ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border-border hover:bg-slate-50"}`}
+          onClick={() => setShadingEnabled(!shadingEnabled)}
         >
           <Layers className="w-4 h-4" />
-          {heatmapEnabled ? "Hide" : "Show"} Heatmap
+          {shadingEnabled ? "Hide" : "Show"} risk shading
         </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Main Map Card */}
-        <Card className="p-0 bg-white rounded-xl  lg:col-span-3 overflow-hidden relative shadow-sm">
+        <Card className="p-0 bg-white rounded-xl lg:col-span-3 overflow-hidden relative shadow-sm">
 
           {/* Floating Search Bar */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md px-4">
@@ -217,23 +375,29 @@ export function GISMap() {
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder="Locate establishment by name or barangay..."
+                placeholder="Search barangay..."
                 className="pl-10 bg-white border-none shadow-sm text-sm py-5 rounded-xl w-full focus-visible:ring-1 focus-visible:ring-gray-300"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && suggestions.length > 0) selectBarangay(suggestions[0]);
+                  if (e.key === "Escape") setShowSuggestions(false);
+                }}
               />
-              {showSuggestions && searchQuery && filteredSuggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white  rounded-xl shadow-xl overflow-hidden z-[1001]">
-                  {filteredSuggestions.map((pin) => (
+              {showSuggestions && searchQuery && suggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl overflow-hidden z-[1001]">
+                  {suggestions.map((name) => (
                     <button
-                      key={pin.id}
+                      key={name}
                       className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
-                      onClick={() => { setSelectedPin(pin); setSearchQuery(pin.name); setShowSuggestions(false); }}
+                      onClick={() => selectBarangay(name)}
                     >
-                      <p className="font-bold text-slate-900 text-sm">{pin.name}</p>
-                      <p className="text-xs text-muted-foreground font-medium">{pin.barangay} · Score: {pin.score}%</p>
+                      <p className="font-bold text-slate-900 text-sm">{name}</p>
+                      <p className="text-xs text-muted-foreground font-medium">
+                        {tooltipCounts(name)} establishment{tooltipCounts(name) === 1 ? "" : "s"}
+                      </p>
                     </button>
                   ))}
                 </div>
@@ -241,13 +405,13 @@ export function GISMap() {
             </div>
           </div>
 
-          {/* Center button */}
+          {/* Reset view */}
           <div className="absolute top-4 right-4 z-[1000]">
             <Button
               size="sm"
-              onClick={centerMap}
-              className="w-10 h-10 p-0 bg-white hover:bg-slate-50 text-slate-900 rounded-lg shadow-md "
-              title="Center Map"
+              onClick={resetView}
+              className="w-10 h-10 p-0 bg-white hover:bg-slate-50 text-slate-900 rounded-lg shadow-md"
+              title="Show whole city"
             >
               <Crosshair className="w-5 h-5" />
             </Button>
@@ -256,110 +420,145 @@ export function GISMap() {
           {/* Leaflet Map Container */}
           <div ref={mapRef} className="w-full h-[650px]" style={{ zIndex: 0 }} />
 
-          {/* Selected Pin Detail Panel */}
-          {selectedPin && (
-            <div className="absolute left-6 top-1/2 -translate-y-1/2 z-[1000] w-82 pointer-events-none">
-              <Card className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl  overflow-hidden pointer-events-auto">
-                <div className="p-5">
-                  <button
-                    onClick={() => setSelectedPin(null)}
-                    className="absolute top-4 right-4 text-muted-foreground hover:text-slate-900 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-
-                  <h3 className="font-bold text-slate-900 text-xl mb-3 pr-8 leading-tight tracking-tight">
-                    {selectedPin.name}
-                  </h3>
-
-                  {(() => {
-                    const badge = getStatusBadge(selectedPin.status, selectedPin.score);
-                    return (
-                      <span
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-4 shadow-sm border"
-                        style={{ backgroundColor: badge.bg, color: badge.color, borderColor: `${badge.color}30` }}
-                      >
-                        <span>{badge.icon}</span>
-                        <span>{badge.text}</span>
-                      </span>
-                    );
-                  })()}
-
-                  <div className="mb-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-                    <p className="text-muted-foreground text-xs font-bold mb-1 uppercase tracking-wider">Health Score</p>
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-black text-5xl" style={{ color: getScoreColor(selectedPin.score), lineHeight: 1 }}>
-                        {selectedPin.score}%
-                      </span>
-                      <span className="text-muted-foreground font-bold text-sm">/ 100</span>
-                    </div>
+          {/* [REF: GIS_EMPTY_STATE]
+              The boundaries always draw, so an empty map means no establishment
+              data — say so plainly instead of leaving a blank choropleth. */}
+          {!isLoading && citywide.total === 0 && (
+            <div className="absolute inset-x-0 bottom-6 z-[1000] flex justify-center px-4 pointer-events-none">
+              <div className="pointer-events-auto max-w-lg rounded-xl bg-white/95 backdrop-blur-md shadow-2xl border border-slate-200 px-5 py-4">
+                <div className="flex items-start gap-3">
+                  <MapPin className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-slate-900 text-sm">No establishments to show yet</p>
+                    <p className="text-sm text-slate-600 font-medium mt-1 leading-relaxed">
+                      {unmappedTotal > 0 ? (
+                        <>
+                          <span className="font-bold text-slate-900">{unmappedTotal}</span>{" "}
+                          establishment{unmappedTotal === 1 ? " is" : "s are"} registered, but none
+                          has a barangay that matches an official boundary.
+                        </>
+                      ) : (
+                        <>Barangay boundaries are drawn, but no establishments have been registered.</>
+                      )}
+                    </p>
                   </div>
-
-                  <div className="space-y-3 mb-5 px-1">
-                    <div className="flex items-center gap-3 text-sm">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-slate-600 font-medium">Inspected: <span className="font-bold text-slate-900">{selectedPin.lastInspected}</span></span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      <UserIcon className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-slate-600 font-medium">By: <span className="font-bold text-slate-900">{selectedPin.inspector}</span></span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      <MapPin className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-slate-900 font-bold">{selectedPin.barangay}</span>
-                    </div>
-                  </div>
-
-                  <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-bold py-3 h-auto shadow-md">
-                    View Full Report
-                  </Button>
                 </div>
-              </Card>
+              </div>
             </div>
           )}
         </Card>
 
         {/* Sidebar */}
         <div className="space-y-4">
-          <Card className="p-6 bg-white rounded-xl ">
-            <h3 className="font-bold text-slate-900 mb-5 text-lg tracking-tight">Quick Statistics</h3>
+          <Card className="p-6 bg-white rounded-xl">
+            {selectedStats ? (
+              <button
+                onClick={resetView}
+                className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-slate-900 transition-colors mb-3"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Whole city
+              </button>
+            ) : (
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                Citywide
+              </p>
+            )}
+
+            <div className="flex items-start justify-between gap-3 mb-5">
+              <h3 className="font-bold text-slate-900 text-lg tracking-tight leading-tight">
+                {panelStats.name}
+              </h3>
+              {panelStats.avgScore !== null && (
+                <div className="text-right flex-shrink-0">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Avg</p>
+                  <p className="font-black text-xl leading-none" style={{ color: getScoreColor(panelStats.avgScore) }}>
+                    {panelStats.avgScore}%
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-3">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-sm text-slate-700 font-bold">Establishments</span>
+                <span className="font-black text-2xl text-slate-900">{panelStats.total}</span>
+              </div>
               <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-50 border border-emerald-100">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-4 rounded-full bg-emerald-500 border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-slate-700 font-bold">Passed</span>
+                  <span className="text-sm text-slate-700 font-bold">100% compliant</span>
                 </div>
-                <span className="font-black text-2xl text-emerald-600">{passedCount}</span>
+                <span className="font-black text-2xl text-emerald-600">{panelStats.compliant}</span>
               </div>
               <div className="flex items-center justify-between p-4 rounded-xl bg-amber-50 border border-amber-100">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-4 rounded-full bg-amber-500 border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-slate-700 font-bold">Warning</span>
+                  <span className="text-sm text-slate-700 font-bold">Moderate deficiencies</span>
                 </div>
-                <span className="font-black text-2xl text-amber-600">{warningCount}</span>
+                <span className="font-black text-2xl text-amber-600">{panelStats.moderate}</span>
               </div>
               <div className="flex items-center justify-between p-4 rounded-xl bg-red-50 border border-red-100">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-4 rounded-full bg-red-500 border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-slate-700 font-bold">Failed</span>
+                  <span className="text-sm text-slate-700 font-bold">High risk</span>
                 </div>
-                <span className="font-black text-2xl text-red-600">{failedCount}</span>
+                <span className="font-black text-2xl text-red-600">{panelStats.highRisk}</span>
+              </div>
+              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 rounded-full bg-slate-400 border-[3px] border-white shadow-sm" />
+                  <span className="text-sm text-slate-700 font-bold">Not yet inspected</span>
+                </div>
+                <span className="font-black text-2xl text-slate-500">{panelStats.notInspected}</span>
               </div>
             </div>
+
+            {selectedStats && selectedStats.establishments.length > 0 && (
+              <div className="mt-5 pt-5 border-t border-slate-100">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
+                  Establishments here
+                </p>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {selectedStats.establishments.map((est) => (
+                    <div key={est.id} className="flex items-center justify-between gap-3 py-2 border-b border-slate-50 last:border-0">
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 text-sm truncate">{est.name}</p>
+                        <p className="text-xs text-muted-foreground font-medium truncate">
+                          {est.lastInspected}
+                          {est.inspector ? ` · ${est.inspector}` : ""}
+                        </p>
+                      </div>
+                      <span
+                        className="font-black text-sm flex-shrink-0"
+                        style={{ color: est.score === null ? "#94a3b8" : getScoreColor(est.score) }}
+                      >
+                        {est.score === null ? "—" : `${est.score}%`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedStats && selectedStats.total === 0 && (
+              <p className="mt-5 text-sm text-slate-600 font-medium leading-relaxed">
+                No establishments are registered in this barangay yet.
+              </p>
+            )}
           </Card>
 
-          <Card className="p-6 bg-white rounded-xl ">
+          <Card className="p-6 bg-white rounded-xl">
             <h3 className="font-bold text-slate-900 mb-5 text-lg tracking-tight">Legend</h3>
             <div className="space-y-4">
               {[
-                { color: "#10b981", label: "Excellent", range: "90–100%" },
-                { color: "#f59e0b", label: "Satisfactory", range: "70–89%" },
-                { color: "#ef4444", label: "Critical", range: "Below 70%" },
+                { color: "#059669", label: "100% compliant", range: "Perfect rating" },
+                { color: "#DAA520", label: "Moderate deficiencies", range: "70–99%" },
+                { color: "#DC143C", label: "High risk", range: "Below 70%" },
+                { color: "#94a3b8", label: "Not yet inspected", range: "No inspection on record" },
               ].map(({ color, label, range }) => (
                 <div key={label} className="flex items-center gap-4">
-                  <div className="w-8 h-8 rounded-full border-[3px] border-white shadow-md flex items-center justify-center flex-shrink-0" style={{ backgroundColor: color }}>
-                    <div className="w-1.5 h-1.5 bg-white rounded-full" />
-                  </div>
+                  <div className="w-8 h-8 rounded-lg border-[3px] border-white shadow-md flex-shrink-0" style={{ backgroundColor: color }} />
                   <div>
                     <p className="text-sm font-bold text-slate-800">{label}</p>
                     <p className="text-xs text-muted-foreground font-bold">{range}</p>
@@ -367,20 +566,48 @@ export function GISMap() {
                 </div>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground font-medium mt-5 leading-relaxed">
+              A barangay is shaded by its worst-rated establishment; darker fill means more
+              establishments registered there.
+            </p>
           </Card>
 
-          {failedCount > 0 && (
-            <Card className="p-6 bg-red-50 rounded-xl border border-red-200 shadow-sm animate-pulse-subtle">
+          {citywide.highRisk > 0 && (
+            <Card className="p-6 bg-red-50 rounded-xl border border-red-200 shadow-sm">
               <div className="flex items-center gap-3 mb-3">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
                 <h3 className="font-bold text-red-600 text-lg">Critical Alerts</h3>
               </div>
               <p className="text-sm text-slate-700 font-medium leading-relaxed">
-                <span className="font-black text-slate-900">{failedCount}</span> establishments require immediate attention
+                <span className="font-black text-slate-900">{citywide.highRisk}</span> establishment
+                {citywide.highRisk === 1 ? "" : "s"} citywide rated below 70% on the latest inspection.
               </p>
-              <Button size="sm" className="w-full mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-3 h-auto shadow-lg shadow-red-200">
-                View All Critical Cases
-              </Button>
+            </Card>
+          )}
+
+          {/* [REF: GIS_UNMAPPED]
+              Establishments whose stored barangay matches no official boundary
+              are missing from every count above. Naming them is the only way an
+              admin can fix the underlying record. */}
+          {unmappedTotal > 0 && (
+            <Card className="p-6 bg-amber-50 rounded-xl border border-amber-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-3">
+                <MapPin className="w-5 h-5 text-amber-600" />
+                <h3 className="font-bold text-amber-700 text-base">Not on the map</h3>
+              </div>
+              <p className="text-sm text-slate-700 font-medium leading-relaxed mb-3">
+                <span className="font-black text-slate-900">{unmappedTotal}</span> establishment
+                {unmappedTotal === 1 ? " has" : "s have"} a barangay that matches no official
+                boundary, so {unmappedTotal === 1 ? "it is" : "they are"} excluded from the counts above.
+              </p>
+              <div className="space-y-1">
+                {[...unmapped.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => (
+                  <div key={label} className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-700 truncate">{label}</span>
+                    <span className="font-black text-amber-700 flex-shrink-0 ml-2">{count}</span>
+                  </div>
+                ))}
+              </div>
             </Card>
           )}
         </div>

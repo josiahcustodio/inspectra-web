@@ -14,7 +14,6 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Switch } from "../components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -28,9 +27,10 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from "../components/ui/input-otp";
-import { Settings as SettingsIcon, User, Bell, Shield, Database, Mail, KeyRound, Trash2 } from "lucide-react";
+import { User, KeyRound, Trash2 } from "lucide-react";
 import { useAuth } from "../../lib/useAuth";
 
+// [REF: MFA_TOTP_ENROLL]
 function SecuritySettings() {
   const { user } = useAuth();
   const enrolledTotp = user
@@ -255,34 +255,24 @@ function SecuritySettings() {
 }
 
 export function Settings() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   return (
     <div className="space-y-6">
       <div>
         <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Settings</h2>
-        <p className="text-muted-foreground mt-1">Manage system preferences and configurations</p>
+        <p className="text-muted-foreground mt-1">Manage your account and security</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Profile Settings */}
+        {/* Account — read straight from Firebase Auth + the Firestore profile */}
         <Card className="p-6 bg-white rounded-xl  lg:col-span-2 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
               <User className="w-5 h-5 text-primary" />
             </div>
-            <h3 className="font-bold text-slate-900 text-lg">Profile Settings</h3>
+            <h3 className="font-bold text-slate-900 text-lg">Account</h3>
           </div>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="firstName" className="text-slate-700 font-bold text-xs uppercase tracking-wider">First Name</Label>
-                <Input id="firstName" defaultValue="Supervisor" className="mt-1.5" />
-              </div>
-              <div>
-                <Label htmlFor="lastName" className="text-slate-700 font-bold text-xs uppercase tracking-wider">Last Name</Label>
-                <Input id="lastName" defaultValue="Admin" className="mt-1.5" />
-              </div>
-            </div>
             <div>
               <Label htmlFor="email" className="text-slate-700 font-bold text-xs uppercase tracking-wider">Email Address</Label>
               <Input
@@ -295,39 +285,10 @@ export function Settings() {
               <p className="text-xs text-slate-500 mt-1">Signed in as this account — contact an admin to change it.</p>
             </div>
             <div>
-              <Label htmlFor="phone" className="text-slate-700 font-bold text-xs uppercase tracking-wider">Phone Number</Label>
-              <Input id="phone" defaultValue="+63 912 345 6789" className="mt-1.5" />
+              <Label className="text-slate-700 font-bold text-xs uppercase tracking-wider">Role</Label>
+              <p className="mt-1.5 font-bold text-slate-900 capitalize">{role ?? "—"}</p>
+              <p className="text-xs text-slate-500 mt-1">Roles are assigned by administrators.</p>
             </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" className="border-border hover:bg-slate-50">Cancel</Button>
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm">
-                Save Changes
-              </Button>
-            </div>
-          </div>
-        </Card>
-
-        {/* Quick Actions */}
-        <Card className="p-6 bg-white rounded-xl ">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
-              <SettingsIcon className="w-5 h-5 text-primary" />
-            </div>
-            <h3 className="font-bold text-slate-900 text-lg">Quick Actions</h3>
-          </div>
-          <div className="space-y-3">
-            <Button variant="outline" className="w-full justify-start gap-2 border-border hover:bg-slate-50 transition-colors">
-              <Database className="w-4 h-4" />
-              Export Data
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2 border-border hover:bg-slate-50 transition-colors">
-              <Mail className="w-4 h-4" />
-              Generate Report
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2 border-border hover:bg-slate-50 transition-colors">
-              <Shield className="w-4 h-4" />
-              System Backup
-            </Button>
           </div>
         </Card>
       </div>
@@ -335,82 +296,6 @@ export function Settings() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <SecuritySettings />
       </div>
-
-      {/* Notifications */}
-      <Card className="p-6 bg-white rounded-xl ">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
-            <Bell className="w-5 h-5 text-primary" />
-          </div>
-          <h3 className="font-bold text-slate-900 text-lg">Notification Preferences</h3>
-        </div>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between py-4 border-b border-slate-50">
-            <div>
-              <p className="font-bold text-slate-900">Failed Inspections</p>
-              <p className="text-sm text-muted-foreground font-medium">
-                Get notified when an establishment fails inspection
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-          <div className="flex items-center justify-between py-4 border-b border-slate-50">
-            <div>
-              <p className="font-bold text-slate-900">Daily Summary</p>
-              <p className="text-sm text-muted-foreground font-medium">
-                Receive daily reports of all inspections
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-          <div className="flex items-center justify-between py-4 border-b border-slate-50">
-            <div>
-              <p className="font-bold text-slate-900">Re-inspection Due</p>
-              <p className="text-sm text-muted-foreground font-medium">
-                Alerts when re-inspections are approaching
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-          <div className="flex items-center justify-between py-4 border-b border-slate-50 last:border-0">
-            <div>
-              <p className="font-bold text-slate-900">System Updates</p>
-              <p className="text-sm text-muted-foreground font-medium">
-                Notifications about system maintenance and updates
-              </p>
-            </div>
-            <Switch />
-          </div>
-        </div>
-      </Card>
-
-      {/* System Information */}
-      <Card className="p-6 bg-white rounded-xl ">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
-            <Shield className="w-5 h-5 text-primary" />
-          </div>
-          <h3 className="font-bold text-slate-900 text-lg">System Information</h3>
-        </div>
-        <div className="grid grid-cols-2 gap-8 text-sm">
-          <div>
-            <p className="text-muted-foreground font-bold text-xs uppercase tracking-wider mb-1">System Version</p>
-            <p className="font-bold text-slate-900 text-lg">v2.4.1</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground font-bold text-xs uppercase tracking-wider mb-1">Last Updated</p>
-            <p className="font-bold text-slate-900 text-lg">March 1, 2026</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground font-bold text-xs uppercase tracking-wider mb-1">Database Status</p>
-            <p className="font-bold text-primary text-lg">Operational</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground font-bold text-xs uppercase tracking-wider mb-1">Total Users</p>
-            <p className="font-bold text-slate-900 text-lg">12</p>
-          </div>
-        </div>
-      </Card>
     </div>
   );
 }
