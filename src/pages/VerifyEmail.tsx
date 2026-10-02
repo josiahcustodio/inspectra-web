@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Button } from "../components/ui/button";
+import { Button } from "@/components/ui/button";
 import { ShieldCheck, MailCheck } from "lucide-react";
 import { sendEmailVerification, signOut } from "firebase/auth";
-import { auth } from "../../lib/firebase";
+import { auth } from "@/lib/firebase";
 import { toast } from "sonner";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "@/lib/useAuth";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
@@ -56,6 +56,12 @@ export function VerifyEmail() {
   };
 
   // [REF: EMAIL_VERIFICATION_CHECK]
+  //
+  // Clicking the link in the email verifies the account on Firebase's side, but
+  // this tab does not hear about it: `emailVerified` is baked into the cached ID
+  // token, and nothing invalidates that token on its own. So the check has to
+  // pull a fresh one first and only then read the flag — without the
+  // refreshUser() call this button would report "still not verified" forever.
   const handleCheckVerified = async () => {
     setIsChecking(true);
     try {

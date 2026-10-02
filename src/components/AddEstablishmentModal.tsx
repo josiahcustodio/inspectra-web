@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { COLLECTIONS, mapCategory, saveEstablishment } from "../../lib/firestore";
-import { useCollection } from "../../lib/useCollection";
-import type { Category, Establishment } from "../../lib/models";
-import psgcData from "../../lib/data/batangas_psgc.json";
+import { COLLECTIONS, mapCategory, saveEstablishment } from "@/lib/firestore";
+import { useCollection } from "@/lib/useCollection";
+import type { Category, Establishment } from "@/lib/models";
+import psgcData from "@/lib/data/batangas_psgc.json";
 
 interface AddEstablishmentModalProps {
   open: boolean;

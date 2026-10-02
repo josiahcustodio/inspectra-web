@@ -9,7 +9,7 @@
 // chosen from a fixed list. Boundaries are real PSA/PSGC 2019 polygons, not
 // drawn approximations — see ATTRIBUTIONS.md.
 
-import boundaries from "./data/batangas_barangays.geojson.json";
+import boundaries from "@/lib/data/batangas_barangays.geojson.json";
 import type { Establishment } from "./models";
 
 export interface BarangayFeatureProps {

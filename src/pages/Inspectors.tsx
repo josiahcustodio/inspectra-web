@@ -1,24 +1,24 @@
 import { useMemo, useState } from "react";
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "../components/ui/dialog";
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../components/ui/select";
+} from "@/components/ui/select";
 import { User, Mail, Phone, ClipboardCheck, Award, Plus, Trash2, Pencil } from "lucide-react";
-import { useCollection } from "../../lib/useCollection";
+import { useCollection } from "@/lib/useCollection";
 import {
   COLLECTIONS,
   deleteInspector,
@@ -26,9 +26,9 @@ import {
   mapInspector,
   mapProfile,
   saveInspector,
-} from "../../lib/firestore";
-import type { Inspector } from "../../lib/models";
-import { useAuth } from "../../lib/useAuth";
+} from "@/lib/firestore";
+import type { Inspector } from "@/lib/models";
+import { useAuth } from "@/lib/useAuth";
 import { toast } from "sonner";
 
 function getStatusColor(status: string) {

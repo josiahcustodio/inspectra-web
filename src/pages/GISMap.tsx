@@ -1,10 +1,10 @@
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { MapPin, Layers, Search, AlertTriangle, ChevronLeft, Crosshair } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useCollection } from "../../lib/useCollection";
-import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "../../lib/firestore";
+import { useCollection } from "@/lib/useCollection";
+import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/firestore";
 import {
   BARANGAY_BOUNDARIES,
   BARANGAY_NAMES,
@@ -12,7 +12,7 @@ import {
   barangayOfEstablishment,
   canonicalBarangay,
   normalizeBarangay,
-} from "../../lib/barangayGeo";
+} from "@/lib/barangayGeo";
 import {
   PASSING_SCORE,
   RATING_BANDS,
@@ -21,7 +21,7 @@ import {
   colorOfBand,
   ratingBand,
   ratingColor,
-} from "../../lib/ratingScale";
+} from "@/lib/ratingScale";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 

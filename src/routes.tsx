@@ -1,16 +1,16 @@
 import { createBrowserRouter, Navigate } from "react-router";
-import { Layout } from "./components/Layout";
-import { Dashboard } from "./pages/Dashboard";
-import { Establishments } from "./pages/Establishments";
-import { Inspections } from "./pages/Inspections";
-import { GISMap } from "./pages/GISMap";
-import { Inspectors } from "./pages/Inspectors";
-import { Settings } from "./pages/Settings";
-import { Login } from "./pages/Login";
-import { Signup } from "./pages/Signup";
-import { VerifyEmail } from "./pages/VerifyEmail";
-import { AuthGuard } from "./components/AuthGuard";
-import { useAuth } from "../lib/useAuth";
+import { Layout } from "@/components/Layout";
+import { Dashboard } from "@/pages/Dashboard";
+import { Establishments } from "@/pages/Establishments";
+import { Inspections } from "@/pages/Inspections";
+import { GISMap } from "@/pages/GISMap";
+import { Inspectors } from "@/pages/Inspectors";
+import { Settings } from "@/pages/Settings";
+import { Login } from "@/pages/Login";
+import { Signup } from "@/pages/Signup";
+import { VerifyEmail } from "@/pages/VerifyEmail";
+import { AuthGuard } from "@/components/AuthGuard";
+import { useAuth } from "@/lib/useAuth";
 
 // [REF: ROLE_REDIRECT]
 const RoleRedirect = () => {

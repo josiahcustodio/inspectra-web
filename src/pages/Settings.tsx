@@ -10,10 +10,10 @@ import {
 } from "firebase/auth";
 import QRCode from "qrcode";
 import { toast } from "sonner";
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -21,16 +21,23 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "../components/ui/dialog";
+} from "@/components/ui/dialog";
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
-} from "../components/ui/input-otp";
+} from "@/components/ui/input-otp";
 import { User, KeyRound, Trash2 } from "lucide-react";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "@/lib/useAuth";
 
 // [REF: MFA_TOTP_ENROLL]
+//
+// TOTP enrolment is a three-step dialog, but the steps are not walked in order.
+// It opens on "qr", because that is the happy path: a user who signed in moments
+// ago already has a fresh enough token to mint a secret. "reauth" is entered
+// reactively — only once Firebase rejects getSession() with
+// `auth/requires-recent-login` — and on success it re-enters beginEnrollment(),
+// so reauth is a detour that rejoins the flow rather than a first step.
 function SecuritySettings() {
   const { user } = useAuth();
   const enrolledTotp = user
@@ -44,8 +51,15 @@ function SecuritySettings() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  // enrolledTotp is read synchronously off the `user` object, and Firebase
+  // mutates that object in place when a factor is enrolled or removed — the
+  // reference never changes, so React has no reason to re-render and the card
+  // would keep showing the pre-change state. Bumping this unused counter is
+  // what forces the re-read.
   const [, forceRerender] = useState(0);
 
+  // Decides which proof of identity the reauth step can ask for: a Google-only
+  // account has no password to type, so it has to go back through the popup.
   const usesPassword = user?.providerData.some((p) => p.providerId === "password") ?? false;
 
   const beginEnrollment = async () => {
