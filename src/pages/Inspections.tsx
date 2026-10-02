@@ -1,11 +1,11 @@
-import { Card } from "../components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog";
-import { Button } from "../components/ui/button";
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import {
   Pagination,
   PaginationContent,
@@ -13,7 +13,7 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "../components/ui/pagination";
+} from "@/components/ui/pagination";
 import {
   Calendar,
   CheckCircle2,
@@ -24,15 +24,15 @@ import {
   XCircle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useCollection } from "../../lib/useCollection";
+import { useCollection } from "@/lib/useCollection";
 import {
   COLLECTIONS,
   fetchInspectionDetails,
   mapEstablishment,
   mapInspectionLog,
-} from "../../lib/firestore";
-import type { InspectionLog } from "../../lib/models";
-import { ratingColor, ratingLabel } from "../../lib/ratingScale";
+} from "@/lib/firestore";
+import type { InspectionLog } from "@/lib/models";
+import { ratingColor, ratingLabel } from "@/lib/ratingScale";
 
 function getStatusColor(status: string) {
   switch (status) {

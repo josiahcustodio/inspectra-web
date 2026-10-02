@@ -1,10 +1,10 @@
 import { createRoot } from "react-dom/client";
-import App from "./app/App.tsx";
-import "./styles/index.css";
-import { ConnectionProvider } from "./lib/ConnectionProvider.tsx";
-import { AuthProvider } from "./lib/useAuth.tsx";
-import { purgeLegacyOfflineStorage } from "./lib/legacyOfflineCleanup.ts";
-import { Toaster } from "./app/components/ui/sonner.tsx";
+import App from "@/App";
+import "@/styles/index.css";
+import { ConnectionProvider } from "@/lib/ConnectionProvider";
+import { AuthProvider } from "@/lib/useAuth";
+import { purgeLegacyOfflineStorage } from "@/lib/legacyOfflineCleanup";
+import { Toaster } from "@/components/ui/sonner";
 
 // [REF: WEB_APP_BOOTSTRAP]
 purgeLegacyOfflineStorage();

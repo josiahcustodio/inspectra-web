@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "../components/ui/input-otp";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { ShieldCheck, ShieldQuestion } from "lucide-react";
 import {
   signInWithEmailAndPassword,
@@ -13,9 +13,9 @@ import {
   TotpMultiFactorGenerator,
   type MultiFactorResolver,
 } from "firebase/auth";
-import { auth } from "../../lib/firebase";
+import { auth } from "@/lib/firebase";
 import { toast } from "sonner";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "@/lib/useAuth";
 
 export function Login() {
   const navigate = useNavigate();
@@ -26,7 +26,9 @@ export function Login() {
   const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
   const [mfaCode, setMfaCode] = useState("");
 
-  // If already logged in, redirect
+  // A session that is already live means this page was reached by typing /login
+  // while signed in. Redirect, and return null on the way out so the form never
+  // flashes up for the frame before the navigation commits.
   useEffect(() => {
     if (session) navigate("/", { replace: true });
   }, [session, navigate]);
@@ -45,6 +47,9 @@ export function Login() {
       // Navigation is handled automatically by the AuthGuard since useAuth updates
       navigate("/", { replace: true });
     } catch (err: any) {
+      // Firebase reports "this account has a second factor" by throwing, not by
+      // returning — so the MFA challenge is raised out of the catch block. The
+      // error carries the resolver that the challenge needs; it is not a failure.
       if (err.code === "auth/multi-factor-auth-required") {
         setMfaResolver(getMultiFactorResolver(auth, err));
       } else {
@@ -60,7 +65,11 @@ export function Login() {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      // Navigation handled by auth guard
+      // No setIsLoading(false) on this path, and no navigate() either: the auth
+      // state change re-renders through the guard and unmounts this page, so
+      // clearing the flag would only be writing to a component on its way out.
+      // The spinner therefore stays up until the redirect lands, which is what
+      // we want. Failure does clear it — see the catch below.
     } catch (err: any) {
       if (err.code === "auth/multi-factor-auth-required") {
         setMfaResolver(getMultiFactorResolver(auth, err));

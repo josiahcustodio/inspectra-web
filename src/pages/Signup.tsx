@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ShieldCheck } from "lucide-react";
 import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
-import { auth } from "../../lib/firebase";
+import { auth } from "@/lib/firebase";
 import { toast } from "sonner";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "@/lib/useAuth";
 
 export function Signup() {
   const navigate = useNavigate();
@@ -17,6 +17,9 @@ export function Signup() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  // Same guard as Login: reaching /signup with a live session means the URL was
+  // typed by hand. Redirect, and render nothing in the interim so the form does
+  // not flash.
   useEffect(() => {
     if (session) navigate("/", { replace: true });
   }, [session, navigate]);
@@ -39,6 +42,10 @@ export function Signup() {
 
     setIsLoading(true);
     try {
+      // createUserWithEmailAndPassword signs the new account in immediately, so
+      // by the time this resolves there is a session — just an unverified one.
+      // /verify-email is where that state is parked; the route map sends anyone
+      // unverified back there anyway, so this navigate only saves a round trip.
       const credential = await createUserWithEmailAndPassword(auth, email, password);
       await sendEmailVerification(credential.user);
       toast.success("Account created — check your inbox to verify your email");

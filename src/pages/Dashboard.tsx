@@ -13,15 +13,15 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { useCollection } from "../../lib/useCollection";
-import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "../../lib/firestore";
+import { useCollection } from "@/lib/useCollection";
+import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/firestore";
 import {
   PASSING_SCORE,
   RATING_BANDS,
   emptyBandCounts,
   isHighRisk,
   ratingBand,
-} from "../../lib/ratingScale";
+} from "@/lib/ratingScale";
 
 // [REF: CARD_SURFACE_STYLE]
 // The only shared style constant in the web app. Every other screen spells

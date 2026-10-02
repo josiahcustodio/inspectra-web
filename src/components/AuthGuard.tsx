@@ -1,5 +1,5 @@
 import { Navigate, useLocation, Outlet } from 'react-router';
-import { useAuth } from '../../lib/useAuth';
+import { useAuth } from '@/lib/useAuth';
 
 interface AuthGuardProps {
   allowedRoles?: ('admin' | 'officer')[];

@@ -11,9 +11,10 @@ export default defineConfig({
     }
   },
   plugins: [
-    // The React and Tailwind plugins are both required for Make, even if
-    // Tailwind is not being actively used – do not remove them
     react(),
+    // Tailwind runs as a Vite plugin in v4 — there is no tailwind.config.js.
+    // The content scan is declared with @source in styles/tailwind.css instead,
+    // which is why deleting a file can change the generated stylesheet.
     tailwindcss(),
   ],
   resolve: {

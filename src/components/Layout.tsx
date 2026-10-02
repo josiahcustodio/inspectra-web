@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
 import { signOut } from "firebase/auth";
-import { auth } from "../../lib/firebase";
-import { useConnection } from "../../lib/ConnectionProvider";
-import { useAuth } from "../../lib/useAuth";
+import { auth } from "@/lib/firebase";
+import { useConnection } from "@/lib/ConnectionProvider";
+import { useAuth } from "@/lib/useAuth";
 import {
   LayoutDashboard,
   Building2,
@@ -23,8 +23,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+} from "@/components/ui/dropdown-menu";
 
+// Paths here are deliberately relative — Layout prefixes them per role below,
+// so the six destinations are described once instead of once per role.
 const baseNavItems = [
   { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "establishments", label: "Establishments", icon: Building2 },
@@ -44,6 +46,11 @@ export function Layout() {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
 
   // [REF: ROLE_NAV]
+  //
+  // Admins and officers see the same six destinations under different path
+  // prefixes. This only builds the links: whether a role may actually open a
+  // route is decided by AuthGuard and the route map, never here — so adding an
+  // item to baseNavItems does not grant anyone access to it.
   const rolePrefix = role === 'admin' ? '/admin' : '/officer';
   const navItems = baseNavItems.map(item => ({ ...item, path: `${rolePrefix}/${item.path}` }));
 

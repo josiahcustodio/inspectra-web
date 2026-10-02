@@ -1,11 +1,11 @@
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Building2, Edit2 } from "lucide-react";
-import { useCollection } from "../../lib/useCollection";
-import { COLLECTIONS, mapEstablishment } from "../../lib/firestore";
-import type { Establishment } from "../../lib/models";
+import { useCollection } from "@/lib/useCollection";
+import { COLLECTIONS, mapEstablishment } from "@/lib/firestore";
+import type { Establishment } from "@/lib/models";
 import { useState } from "react";
-import { AddEstablishmentModal } from "../components/AddEstablishmentModal";
+import { AddEstablishmentModal } from "@/components/AddEstablishmentModal";
 
 export function Establishments() {
   const { data, isLoading, error } = useCollection(COLLECTIONS.establishments, mapEstablishment);
