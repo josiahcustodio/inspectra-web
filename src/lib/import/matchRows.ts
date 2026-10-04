@@ -13,6 +13,12 @@
 //   (branches, or just a common one), and the city's own list carries plenty
 //   of them. They are imported as separate records and merely reported.
 //
+// "Address" means barangay AND street, and a different BARANGAY settles it on
+// its own — "Baliwag Lechon Manok" in Calicanto is not the branch in
+// Alangilan, whether or not either row filled in a street. The street is only
+// consulted when the barangay cannot separate them, which is also the only
+// place a missing address can leave the question unanswerable.
+//
 // A permit number is checked first, but it identifies a permit-YEAR, not a
 // business: a renewal is issued a fresh number, so "permit not found" is the
 // normal yearly case and name+address is what actually recognises a renewal.
@@ -106,6 +112,8 @@ interface IndexedEstablishment {
   nameKey: string;
   /** "" when the record names no street address beyond its barangay. */
   street: string;
+  /** "" when the record names no barangay at all. */
+  barangay: string;
   locationKey: string;
 }
 
@@ -179,6 +187,7 @@ export function addToIndexes(indexes: MatchIndexes, est: Establishment): void {
     establishment: est,
     nameKey: normText(est.business_name),
     street: location.street,
+    barangay: location.barangay,
     locationKey: location.key,
   };
 
@@ -276,23 +285,33 @@ export function decideRow(
     };
   }
 
-  // Step 3 — the name exists, but not at this address. Two cases, and only one
-  // of them is a question:
+  // Step 3 — the name exists, but not at this address.
   const elsewhere = allSameName.filter((e) => e.locationKey !== rowLocation.key);
   if (elsewhere.length > 0) {
-    // Unanswerable: one side records no street address, so we cannot tell a
-    // different address from the same one written differently.
-    const unknown = elsewhere.filter((e) => e.street === "" || rowLocation.street === "");
-    if (unknown.length > 0) {
+    // A DIFFERENT BARANGAY is already a different address, and nothing more is
+    // needed to tell the two businesses apart — "BALIWAG LECHON MANOK" in
+    // Calicanto is not the branch in Alangilan, whether or not either row
+    // bothered to fill in a street. Records in another barangay therefore
+    // never raise a question; they are only reported alongside the new record.
+    const couldBeHere = elsewhere.filter(
+      (e) => e.barangay === "" || rowLocation.barangay === "" || e.barangay === rowLocation.barangay,
+    );
+
+    // Same barangay (or a barangay missing on one side), and a street missing
+    // on one side: now the street is the only thing that could tell them
+    // apart, and it isn't there. That is the one unanswerable case.
+    const unanswerable = couldBeHere.filter((e) => e.street === "" || rowLocation.street === "");
+    if (unanswerable.length > 0) {
       return {
         kind: "review",
         row,
-        candidates: unknown.slice(0, MAX_REVIEW_CANDIDATES).map((e) => candidate(e, "same-name-unknown-address")),
+        candidates: unanswerable.slice(0, MAX_REVIEW_CANDIDATES).map((e) => candidate(e, "same-name-unknown-address")),
       };
     }
 
-    // Both sides name a street, and they differ: a different business. Import
-    // it, and tell the admin it happened.
+    // Every same-named record is either in another barangay, or on a street
+    // that differs from this row's: a different business. Import it, and tell
+    // the admin it happened.
     return {
       kind: "create",
       row,
