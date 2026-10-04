@@ -6,6 +6,8 @@ import { COLLECTIONS, mapEstablishment } from "@/lib/firestore";
 import type { Establishment } from "@/lib/models";
 import { useState } from "react";
 import { AddEstablishmentModal } from "@/components/AddEstablishmentModal";
+import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModal";
+import { formatShortDate } from "@/lib/inspectionDates";
 
 export function Establishments() {
   const { data, isLoading, error } = useCollection(COLLECTIONS.establishments, mapEstablishment);
@@ -13,9 +15,19 @@ export function Establishments() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEstablishment, setSelectedEstablishment] = useState<Establishment | null>(null);
 
+  // The history modal stays mounted so it keeps its close animation; `historyTarget`
+  // is what it reads, and holding it after close avoids the name blanking mid-fade.
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState<Establishment | null>(null);
+
   const handleOpenModal = (establishment?: Establishment) => {
     setSelectedEstablishment(establishment || null);
     setIsModalOpen(true);
+  };
+
+  const handleOpenHistory = (establishment: Establishment) => {
+    setHistoryTarget(establishment);
+    setIsHistoryOpen(true);
   };
 
   return (
@@ -62,13 +74,39 @@ export function Establishments() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {establishments.map((establishment) => (
-                  <tr key={establishment.id} className="hover:bg-slate-50 transition-colors group">
+                  // [REF: ESTABLISHMENT_HISTORY_MODAL]
+                  // The whole row opens the inspection history. No role="button"
+                  // here on purpose — that would replace the row/cell semantics a
+                  // screen reader needs to read the table, so the row stays a row
+                  // and only becomes focusable and key-activatable.
+                  <tr
+                    key={establishment.id}
+                    className="hover:bg-slate-50 transition-colors group cursor-pointer"
+                    tabIndex={0}
+                    // cursor-pointer is a mouse-only affordance, so name the
+                    // action for anyone arriving by keyboard or screen reader.
+                    aria-haspopup="dialog"
+                    onClick={() => handleOpenHistory(establishment)}
+                    onKeyDown={(e) => {
+                      // Only the row's own key presses; without this, Space or
+                      // Enter on the focused Edit button would open this modal too.
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleOpenHistory(establishment);
+                      }
+                    }}
+                  >
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 border border-indigo-100">
                           <Building2 className="w-4 h-4 text-indigo-600" />
                         </div>
-                        <span className="font-bold text-slate-900 text-sm">{establishment.business_name}</span>
+                        <span className="font-bold text-slate-900 text-sm">{establishment.business_name || "Unnamed establishment"}</span>
+                        {/* The cue a sighted user gets from the row's hover and
+                            cursor. Reads after the name, so the row announces
+                            what it is before what it does. */}
+                        <span className="sr-only">— press Enter to view inspection history</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-600 font-medium">
@@ -87,11 +125,11 @@ export function Establishments() {
                       {establishment.sanitary_permit_no || <span className="text-slate-400">N/A</span>}
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-600 font-medium hidden md:table-cell">
-                      {establishment.created_at ? new Date(establishment.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : <span className="text-slate-400">N/A</span>}
+                      {establishment.created_at ? formatShortDate(establishment.created_at) : <span className="text-slate-400">N/A</span>}
                     </td>
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
-                        <Button variant="outline" size="icon" onClick={() => handleOpenModal(establishment)} className="h-8 w-8 border-border text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 shadow-sm" title="Edit Establishment">
+                        <Button variant="outline" size="icon" onClick={(e) => { e.stopPropagation(); handleOpenModal(establishment); }} className="h-8 w-8 border-border text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 shadow-sm" title="Edit Establishment">
                           <Edit2 className="w-4 h-4" />
                         </Button>
                       </div>
@@ -108,6 +146,12 @@ export function Establishments() {
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         establishmentToEdit={selectedEstablishment}
+      />
+
+      <EstablishmentHistoryModal
+        open={isHistoryOpen}
+        onOpenChange={setIsHistoryOpen}
+        establishment={historyTarget}
       />
     </div>
   );

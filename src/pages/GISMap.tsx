@@ -13,6 +13,7 @@ import {
   canonicalBarangay,
   normalizeBarangay,
 } from "@/lib/barangayGeo";
+import { byNewestFirst, relativeInspectionAge } from "@/lib/inspectionDates";
 import {
   PASSING_SCORE,
   RATING_BANDS,
@@ -88,20 +89,6 @@ function riskColor(stats: BarangayStats) {
   return UNSCORED_COLOR;
 }
 
-/// "3 hours ago" from an ISO timestamp.
-function relativeTime(iso: string | null | undefined) {
-  if (!iso) return "Never inspected";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "Unknown";
-  const mins = Math.floor((Date.now() - then) / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
-}
-
 // [REF: GIS_MAP]
 export function GISMap() {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -134,12 +121,19 @@ export function GISMap() {
     }
 
     const latestByEst = new Map<string, any>();
+    // Newest log per establishment, compared as ISO-8601 text rather than
+    // through `new Date(...)`. The dates are zone-less wall clocks (see
+    // `[REF: INSPECTION_DATE_CONVENTION]`), so parsing them buys nothing here and
+    // risks a shift; ISO strings already sort chronologically. An undated log
+    // loses to any dated one and never wins on a tie.
     for (const log of inspectionLogs) {
       if (!log.establishment_id) continue;
       const prev = latestByEst.get(log.establishment_id);
-      const t = new Date(log.inspection_date ?? 0).getTime();
-      const prevT = prev ? new Date(prev.inspection_date ?? 0).getTime() : -1;
-      if (!prev || t > prevT) latestByEst.set(log.establishment_id, log);
+      if (!prev) {
+        latestByEst.set(log.establishment_id, log);
+        continue;
+      }
+      if (byNewestFirst(log, prev) < 0) latestByEst.set(log.establishment_id, log);
     }
 
     // Running totals for the average, kept alongside each bucket so a barangay
@@ -196,10 +190,10 @@ export function GISMap() {
 
       stats.establishments.push({
         id: est.id,
-        name: est.business_name,
+        name: est.business_name || "Unnamed establishment",
         score,
         inspector: log?.inspector_name ?? null,
-        lastInspected: relativeTime(log?.inspection_date),
+        lastInspected: relativeInspectionAge(log?.inspection_date, "Never inspected"),
       });
     }
 
