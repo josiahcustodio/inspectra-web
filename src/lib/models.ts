@@ -96,6 +96,14 @@ export interface InspectionLog {
   remarks: string | null;
   inspection_date: string | null;
   photo_evidence_url: string | null;
+  // The inspector's sign-off, captured on the phone's signature pad and
+  // uploaded to Storage at signatures/{establishment_id}/{log_id}.png. This is
+  // a download URL, so it can be fetched directly; the hash is what proves the
+  // image is the one captured at the inspection. Written by the Flutter client
+  // (see signaturePath in its sync_service.dart); absent on any log recorded
+  // before sign-off existed, and on one whose upload has not caught up yet.
+  signature_url?: string | null;
+  signature_sha256?: string | null;
   // Per-item checklist answers, read straight off the `results` array field on
   // the `inspection_logs` document — the same shape the Flutter client writes,
   // so both clients read and write the same place.

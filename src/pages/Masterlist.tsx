@@ -20,7 +20,6 @@
 // an .xlsx with the original masterlist column headers.
 
 import { useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
@@ -37,6 +36,7 @@ import { formatShortDate, isoDatePart } from "@/lib/inspectionDates";
 import { toYmd } from "@/lib/import/normalize";
 import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { exportIncludesCategory } from "@/lib/exportPrefs";
+import { exportMasterlistToExcel } from "@/lib/masterlistExport";
 import { ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModal";
 import { PageStrip } from "@/components/PageStrip";
@@ -59,6 +59,9 @@ interface MasterlistRow {
   dateInspectedExport: string | null;
   remarks: string | null;
   remarksColor: string | null; // rating colour for live remarks, null for fallbacks
+  /** The inspector's sign-off from the latest inspection, embedded into the
+   *  Date Inspected cell of the Excel export. */
+  signatureUrl: string | null;
   /** True when dateInspected/remarks came from the imported spreadsheet
    *  rather than a real inspection — rendered muted so nobody mistakes a
    *  typed-in "Satisfactory" from last year's Excel for a live result. */
@@ -146,6 +149,7 @@ export function Masterlist() {
             dateInspectedExport: isoDatePart(log.inspection_date),
             remarks: ratingLabel(log.percentage_rating),
             remarksColor: ratingColor(log.percentage_rating),
+            signatureUrl: log.signature_url ?? null,
             fromImport: false,
           };
         }
@@ -159,6 +163,7 @@ export function Masterlist() {
             dateInspectedExport: isoDatePart(log.inspection_date),
             remarks: log.remarks,
             remarksColor: null,
+            signatureUrl: log.signature_url ?? null,
             fromImport: false,
           };
         }
@@ -169,6 +174,7 @@ export function Masterlist() {
           dateInspectedExport: est.import_date_inspected ?? null,
           remarks: est.import_remarks ?? null,
           remarksColor: null,
+          signatureUrl: null,
           fromImport: Boolean(est.import_date_inspected || est.import_remarks),
         };
       })
@@ -237,41 +243,51 @@ export function Masterlist() {
 
   const resetPage = () => setPage(1);
 
-  const handleExport = () => {
-    // The Category column only ships when the Settings toggle says so: the
-    // official masterlist format has no such column, and for anything not
-    // yet inspected it would be empty anyway.
-    const includeCategory = exportIncludesCategory();
+  const [isExporting, setIsExporting] = useState(false);
 
-    // The whole filtered set, not just the visible page — "export what I'm
-    // looking at" means the filter, not the pagination window.
-    const sheetRows = rows.map((r, i) => ({
-      "No.": i + 1,
-      "Applic. Type": r.establishment.applic_type ?? "",
-      "Permit No.": r.establishment.business_permit_no ?? "",
-      "Date Issued": r.establishment.permit_date_issued ?? "",
-      "Business Trade Name": r.establishment.business_name,
-      "Line/Kind of Business": r.establishment.line_of_business ?? "",
-      "Flr. Area (SqM.)": r.establishment.floor_area_sqm ?? "",
-      "No. of Employee": r.establishment.personnel_count ?? "",
-      "Business Address": typeof r.establishment.address === "string" ? r.establishment.address : "",
-      "Barangay": r.establishment.barangay ?? "",
-      "Owner's Name": r.establishment.owner_name ?? "",
-      "Tel. No": r.establishment.tel_no ?? "",
-      "SSSR": r.establishment.import_sssr ?? "",
-      // Canonical YYYY-MM-DD, never the on-screen prose: exports get
-      // re-imported, and the import must round-trip losslessly.
-      "Date Inspected": r.dateInspectedExport ?? "",
-      "REMARKS": r.remarks ?? "",
-      ...(includeCategory ? { "Category": r.category ?? "" } : {}),
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(sheetRows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Masterlist");
-    // toYmd (local date parts), not toISOString: a UTC slice stamps
-    // yesterday's date on any export before 8 AM in Batangas.
-    const today = toYmd(new Date());
-    XLSX.writeFile(workbook, `masterlist-${groupFilter === "all" ? "all" : groupFilter}-${today}.xlsx`);
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      // toYmd (local date parts), not toISOString: a UTC slice stamps
+      // yesterday's date on any export before 8 AM in Batangas.
+      const today = toYmd(new Date());
+      const result = await exportMasterlistToExcel(
+        // The whole filtered set, not just the visible page — "export what I'm
+        // looking at" means the filter, not the pagination window.
+        rows.map((r) => ({
+          establishment: r.establishment,
+          category: r.category,
+          dateInspected: r.dateInspectedExport,
+          remarks: r.remarks,
+          signatureUrl: r.signatureUrl,
+        })),
+        {
+          // The Category column only ships when the Settings toggle says so:
+          // the official masterlist format has no such column, and for
+          // anything not yet inspected it would be empty anyway.
+          includeCategory: exportIncludesCategory(),
+          fileName: `masterlist-${groupFilter === "all" ? "all" : groupFilter}-${today}.xlsx`,
+        },
+      );
+
+      if (result.signaturesFailed > 0) {
+        // The file was still written — say what is missing from it rather than
+        // let the admin discover a blank cell later.
+        toast.warning(
+          `Exported ${result.rows} rows with ${result.signaturesEmbedded} signatures. ` +
+            `${result.signaturesFailed} could not be downloaded and are missing from the file.`,
+        );
+      } else if (result.signaturesEmbedded > 0) {
+        toast.success(`Exported ${result.rows} rows, ${result.signaturesEmbedded} with signatures.`);
+      } else {
+        toast.success(`Exported ${result.rows} rows.`);
+      }
+    } catch (err) {
+      toast.error("Couldn't build the Excel file. Check your connection and try again.");
+      console.error("[Masterlist] export failed", err);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -284,11 +300,12 @@ export function Masterlist() {
           </p>
         </div>
         <Button
-          onClick={handleExport}
-          disabled={rows.length === 0}
+          onClick={() => void handleExport()}
+          disabled={rows.length === 0 || isExporting}
           className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-sm"
         >
-          <Download className="w-4 h-4 mr-2" /> Export to Excel
+          <Download className="w-4 h-4 mr-2" />
+          {isExporting ? "Building file…" : "Export to Excel"}
         </Button>
       </div>
 

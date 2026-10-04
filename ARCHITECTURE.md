@@ -51,6 +51,8 @@ src/
     ConnectionProvider.tsx  Online/offline state for the banner.
     ratingScale.ts      The sanitary rating bands, their labels, ranges and colours.
     exportPrefs.ts      The masterlist export's one setting (include Category column).
+    masterlistExport.ts Writes the masterlist .xlsx, signature PNGs embedded in the
+                        Date Inspected cells. ExcelJS, lazy-loaded; `xlsx` reads, this writes.
     import/             The masterlist importer, split by stage so each is readable alone:
       parseWorkbook.ts  Excel -> clean rows (header detection, layout fallbacks).
       matchRows.ts      Rows -> decisions (the identity-matching cascade).
@@ -150,6 +152,7 @@ build fine and fail at runtime.
 | `KPI_STATS` | pages/Dashboard.tsx |
 | `LIVE_COLLECTION` | lib/useCollection.ts |
 | `ESTABLISHMENT_DELIST` | pages/Masterlist.tsx |
+| `MASTERLIST_EXPORT` | lib/masterlistExport.ts |
 | `MASTERLIST_EXPORT_PREFS` | lib/exportPrefs.ts, pages/Settings.tsx |
 | `MASTERLIST_GRID` | pages/Masterlist.tsx |
 | `MASTERLIST_HEADER_DETECT` | lib/import/parseWorkbook.ts |

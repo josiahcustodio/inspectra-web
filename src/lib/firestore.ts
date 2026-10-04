@@ -110,6 +110,8 @@ export const mapInspectionLog = (id: string, data: any): InspectionLog => ({
   remarks: data.remarks ?? null,
   inspection_date: data.inspection_date ?? null,
   photo_evidence_url: data.photo_evidence_url ?? null,
+  signature_url: data.signature_url ?? null,
+  signature_sha256: data.signature_sha256 ?? null,
   results: Array.isArray(data.results) ? data.results : [],
 });
 
