@@ -46,3 +46,8 @@ __pycache__/
 
 # Conventional drop-zone for local secrets
 secrets/
+
+# Dry-run/report artifacts from one-off scripts. One of these recorded a
+# local service-account key path, so they stay out of the repo.
+scripts/*_dryrun.txt
+scripts/*_report.txt
