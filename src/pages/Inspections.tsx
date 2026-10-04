@@ -5,23 +5,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
+import { InspectionChecklistView } from "@/components/InspectionChecklistView";
+import { PageStrip } from "@/components/PageStrip";
 import {
   Calendar,
-  CheckCircle2,
   ClipboardCheck,
-  ImageOff,
-  MinusCircle,
   User,
-  XCircle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useCollection } from "@/lib/useCollection";
@@ -33,6 +22,7 @@ import {
 } from "@/lib/firestore";
 import type { InspectionLog } from "@/lib/models";
 import { ratingColor, ratingLabel } from "@/lib/ratingScale";
+import { byNewestFirst, isoDatePart, isoTimePart } from "@/lib/inspectionDates";
 
 function getStatusColor(status: string) {
   switch (status) {
@@ -46,44 +36,15 @@ function getStatusColor(status: string) {
 }
 
 function getStatus(rating: number | null | undefined): string {
-  // `== null` on purpose: mapInspectionLog spreads the raw Firestore document,
-  // so a log written without `percentage_rating` arrives as undefined, not null.
+  // `== null` rather than `=== null`. mapInspectionLog now normalises a missing
+  // `percentage_rating` to null, so the strict form would also work — but this
+  // guard is the last line of defence for a hand-built InspectionLog that never
+  // went through the mapper, and five display bugs came from assuming otherwise.
   if (rating != null) return "Completed";
   return "Scheduled";
 }
 
 const PAGE_SIZE = 20;
-
-// Page-number strip: every page when there are few, otherwise first/last with
-// a window around the current page and ellipses for the gaps.
-function pageNumbers(current: number, total: number): (number | "…")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages: (number | "…")[] = [1];
-  if (current > 3) pages.push("…");
-  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) {
-    pages.push(p);
-  }
-  if (current < total - 2) pages.push("…");
-  pages.push(total);
-  return pages;
-}
-
-// The mobile client stores answers as 'Pass' / 'Fail' / 'NA'; logs from before
-// that convention used 'Compliant' / 'Non-Compliant'. Normalise both.
-type AnswerKind = "pass" | "fail" | "na";
-
-function answerKind(answer: unknown): AnswerKind {
-  const a = String(answer ?? "").toLowerCase();
-  if (a === "pass" || a === "compliant") return "pass";
-  if (a === "fail" || a === "non-compliant") return "fail";
-  return "na";
-}
-
-const ANSWER_STYLE: Record<AnswerKind, { label: string; color: string; Icon: typeof CheckCircle2 }> = {
-  pass: { label: "Pass", color: "#10b981", Icon: CheckCircle2 },
-  fail: { label: "Fail", color: "#EF4444", Icon: XCircle },
-  na: { label: "N/A", color: "#64748b", Icon: MinusCircle },
-};
 
 interface InspectionRow extends InspectionLog {
   establishmentName: string;
@@ -113,7 +74,7 @@ export function Inspections() {
     const rows = logs.map((i): InspectionRow => ({
       ...i,
       establishmentName:
-        (i.establishment_id ? nameById.get(i.establishment_id) : null) ??
+        (i.establishment_id ? nameById.get(i.establishment_id) : null) ||
         "Unknown Establishment",
       inspectorName: i.inspector_name || "Unknown Inspector",
       // [REF: RATING_SCALE] band label and colour both come from the shared scale.
@@ -121,17 +82,12 @@ export function Inspections() {
       ratingBandLabel: i.percentage_rating == null ? null : ratingLabel(i.percentage_rating),
       score: i.percentage_rating,
       status: getStatus(i.percentage_rating),
-      date: i.inspection_date ? i.inspection_date.split('T')[0] : "No Date",
-      time: i.inspection_date && i.inspection_date.includes('T') ? i.inspection_date.split('T')[1].substring(0, 5) : "--:--"
+      // [REF: INSPECTION_DATE_CONVENTION] sliced, not parsed — see inspectionDates.ts.
+      date: isoDatePart(i.inspection_date),
+      time: isoTimePart(i.inspection_date) || "--:--"
     }));
 
-    // Newest first. Dates are ISO-8601 strings, so plain string comparison
-    // sorts chronologically; records with no date sink to the bottom.
-    rows.sort((a, b) => {
-      if (!a.inspection_date) return b.inspection_date ? 1 : 0;
-      if (!b.inspection_date) return -1;
-      return b.inspection_date.localeCompare(a.inspection_date);
-    });
+    rows.sort(byNewestFirst);
     return rows;
   }, [logs, establishments]);
 
@@ -169,17 +125,6 @@ export function Inspections() {
       setIsDetailLoading(false);
     }
   }
-
-  const groupedResults = useMemo(() => {
-    const groups = new Map<string, any[]>();
-    for (const result of detail?.results ?? []) {
-      const category = (result?.sub_category as string) || "General";
-      const bucket = groups.get(category) ?? [];
-      bucket.push(result);
-      groups.set(category, bucket);
-    }
-    return groups;
-  }, [detail]);
 
   return (
     <div className="space-y-6">
@@ -270,41 +215,12 @@ export function Inspections() {
           <p className="text-sm text-muted-foreground font-medium">
             Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, inspections.length)} of {inspections.length} inspections
           </p>
-          <Pagination className="mx-0 w-auto justify-end">
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  href="#"
-                  aria-disabled={currentPage === 1}
-                  className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
-                  onClick={(e) => { e.preventDefault(); setPage(currentPage - 1); }}
-                />
-              </PaginationItem>
-              {pageNumbers(currentPage, pageCount).map((p, idx) => (
-                <PaginationItem key={idx}>
-                  {p === "…" ? (
-                    <span className="px-2 text-muted-foreground">…</span>
-                  ) : (
-                    <PaginationLink
-                      href="#"
-                      isActive={p === currentPage}
-                      onClick={(e) => { e.preventDefault(); setPage(p as number); }}
-                    >
-                      {p}
-                    </PaginationLink>
-                  )}
-                </PaginationItem>
-              ))}
-              <PaginationItem>
-                <PaginationNext
-                  href="#"
-                  aria-disabled={currentPage === pageCount}
-                  className={currentPage === pageCount ? "pointer-events-none opacity-50" : ""}
-                  onClick={(e) => { e.preventDefault(); setPage(currentPage + 1); }}
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+          <PageStrip
+            current={currentPage}
+            pageCount={pageCount}
+            onPageChange={setPage}
+            className="mx-0 w-auto justify-end"
+          />
         </div>
       )}
 
@@ -329,126 +245,12 @@ export function Inspections() {
             </DialogTitle>
           </DialogHeader>
 
-          {isDetailLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-            </div>
-          ) : detailError ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <p className="text-muted-foreground font-bold">{detailError}</p>
-              <Button
-                variant="outline"
-                onClick={() => selected && openDetails(selected)}
-                className="font-bold"
-              >
-                Retry
-              </Button>
-            </div>
-          ) : detail ? (
-            <div className="space-y-5">
-              {/* Summary */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 rounded-lg bg-slate-50">
-                  <p className="text-xs text-muted-foreground font-bold mb-1">Inspector</p>
-                  <p className="text-sm font-bold text-slate-900 break-words">{detail.inspector_name || "Unknown"}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-50">
-                  <p className="text-xs text-muted-foreground font-bold mb-1">Date</p>
-                  <p className="text-sm font-bold text-slate-900">
-                    {selected?.date} {selected?.time !== "--:--" ? selected?.time : ""}
-                  </p>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-50">
-                  <p className="text-xs text-muted-foreground font-bold mb-1">Rating</p>
-                  <p className="text-sm font-bold text-slate-900">
-                    {detail.percentage_rating !== null ? `${detail.percentage_rating}%` : "—"}
-                  </p>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-50">
-                  <p className="text-xs text-muted-foreground font-bold mb-1">Total Demerits</p>
-                  <p className="text-sm font-bold text-slate-900">{detail.total_demerits ?? 0}</p>
-                </div>
-              </div>
-
-              {/* Remarks */}
-              {detail.remarks && (
-                <div>
-                  <h4 className="font-bold text-slate-900 text-sm mb-2">Remarks</h4>
-                  <p className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3 whitespace-pre-wrap">{detail.remarks}</p>
-                </div>
-              )}
-
-              {/* Photo evidence */}
-              {detail.photo_evidence_url && (
-                <div>
-                  <h4 className="font-bold text-slate-900 text-sm mb-2">Photo Evidence</h4>
-                  <a href={detail.photo_evidence_url} target="_blank" rel="noreferrer">
-                    <img
-                      src={detail.photo_evidence_url}
-                      alt="Inspection evidence"
-                      className="rounded-lg max-h-64 w-auto border border-border"
-                    />
-                  </a>
-                </div>
-              )}
-
-              {/* Checklist results */}
-              <div>
-                <h4 className="font-bold text-slate-900 text-sm mb-2">
-                  Checklist Results
-                  {detail.results && detail.results.length > 0 && (
-                    <span className="text-muted-foreground font-medium"> · {detail.results.length} items</span>
-                  )}
-                </h4>
-                {!detail.results || detail.results.length === 0 ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground bg-slate-50 rounded-lg p-3">
-                    <ImageOff className="w-4 h-4" />
-                    No per-item answers were recorded for this inspection.
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {[...groupedResults.entries()].map(([category, items]) => (
-                      <div key={category}>
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">{category}</p>
-                        <div className="space-y-1.5">
-                          {items.map((item, idx) => {
-                            const kind = answerKind(item?.answer);
-                            const { label, color, Icon } = ANSWER_STYLE[kind];
-                            return (
-                              <div
-                                key={item?.checklist_item_id ?? idx}
-                                className="flex items-start gap-3 p-2.5 rounded-lg border border-border"
-                              >
-                                <Icon className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color }} />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-slate-900">
-                                    {item?.item_name ?? "Checklist item"}
-                                  </p>
-                                  {item?.note && (
-                                    <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">{item.note}</p>
-                                  )}
-                                </div>
-                                <span
-                                  className="text-xs font-bold flex-shrink-0 px-2 py-0.5 rounded-full"
-                                  style={{
-                                    color,
-                                    backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
-                                  }}
-                                >
-                                  {label}
-                                  {kind === "fail" && item?.weight ? ` · ${item.weight} demerit${item.weight === 1 ? "" : "s"}` : ""}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
+          <InspectionChecklistView
+            log={detail}
+            isLoading={isDetailLoading}
+            error={detailError}
+            onRetry={() => selected && openDetails(selected)}
+          />
         </DialogContent>
       </Dialog>
     </div>

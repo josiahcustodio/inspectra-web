@@ -27,8 +27,9 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
-import { User, KeyRound, Trash2 } from "lucide-react";
+import { User, KeyRound, Trash2, FileSpreadsheet } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
+import { exportIncludesCategory, setExportIncludesCategory } from "@/lib/exportPrefs";
 
 // [REF: MFA_TOTP_ENROLL]
 //
@@ -268,6 +269,49 @@ function SecuritySettings() {
   );
 }
 
+// [REF: MASTERLIST_EXPORT_PREFS]
+// Admin-only card: whether the Masterlist page's Excel export includes the
+// Category column. Category is web-view data (assigned by inspections, not
+// by the uploaded masterlist), so the official export format leaves it out
+// unless an admin opts in — and it stays empty for anything not yet
+// inspected. Stored in this browser's localStorage, not in Firestore: it is
+// a personal export preference, not shared data.
+function ExportSettings() {
+  const [includeCategory, setIncludeCategory] = useState(exportIncludesCategory());
+
+  const toggle = (on: boolean) => {
+    setExportIncludesCategory(on);
+    setIncludeCategory(on);
+  };
+
+  return (
+    <Card className="p-6 bg-white rounded-xl lg:col-span-2 shadow-sm">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+          <FileSpreadsheet className="w-5 h-5 text-primary" />
+        </div>
+        <h3 className="font-bold text-slate-900 text-lg">Masterlist Export</h3>
+      </div>
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={includeCategory}
+          onChange={(e) => toggle(e.target.checked)}
+          className="mt-1"
+        />
+        <span>
+          <span className="font-bold text-slate-900 text-sm">Include the Category column in Excel exports</span>
+          <p className="text-xs text-slate-500 mt-1">
+            Category is assigned when an establishment gets inspected (from the checklist used),
+            so it's not part of the official masterlist format and is empty for anything not yet
+            inspected. Off by default; applies to exports from this browser.
+          </p>
+        </span>
+      </label>
+    </Card>
+  );
+}
+
 export function Settings() {
   const { user, role } = useAuth();
   return (
@@ -306,6 +350,12 @@ export function Settings() {
           </div>
         </Card>
       </div>
+
+      {role === "admin" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <ExportSettings />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <SecuritySettings />

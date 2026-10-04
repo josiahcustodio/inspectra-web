@@ -18,9 +18,15 @@ export interface CollectionState<T> {
 //
 // The subscription is torn down on unmount and whenever the signed-in user
 // changes, so a signed-out session never holds an open listener.
+//
+// `enabled` opts out of subscribing at all. It defaults to true, so a screen
+// that always needs its collection reads exactly as before; pass false to keep
+// the listener closed until the UI that depends on it actually exists — a modal
+// that has never been opened should not be holding a live query open.
 export function useCollection<T>(
   path: string,
   map: (id: string, data: any) => T,
+  enabled: boolean = true,
 ): CollectionState<T> {
   const { user } = useAuth();
   const [state, setState] = useState<CollectionState<T>>({
@@ -35,7 +41,9 @@ export function useCollection<T>(
   mapRef.current = map;
 
   useEffect(() => {
-    if (!user) {
+    // Left as `data: undefined` rather than `[]`: nothing has been read, so
+    // callers must not be able to mistake this for a genuinely empty collection.
+    if (!enabled || !user) {
       setState({ data: undefined, isLoading: false, error: null });
       return;
     }
@@ -80,7 +88,7 @@ export function useCollection<T>(
       cancelled = true;
       unsubscribe?.();
     };
-  }, [path, user]);
+  }, [path, user, enabled]);
 
   return state;
 }

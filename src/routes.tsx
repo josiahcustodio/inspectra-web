@@ -5,6 +5,8 @@ import { Establishments } from "@/pages/Establishments";
 import { Inspections } from "@/pages/Inspections";
 import { GISMap } from "@/pages/GISMap";
 import { Inspectors } from "@/pages/Inspectors";
+import { Masterlist } from "@/pages/Masterlist";
+import { MasterlistImport } from "@/pages/MasterlistImport";
 import { Settings } from "@/pages/Settings";
 import { Login } from "@/pages/Login";
 import { Signup } from "@/pages/Signup";
@@ -79,6 +81,13 @@ export const router = createBrowserRouter([
               { path: "inspections", Component: Inspections },
               { path: "gis-map", Component: GISMap },
               { path: "inspectors", Component: Inspectors },
+              // Admin branch only — the full Excel-shaped masterlist view,
+              // and the importer. The import machinery collections
+              // (upload_batches, review_queue) are admin-only in
+              // firestore.rules, so mounting the importer for officers would
+              // give them a page whose every write fails.
+              { path: "masterlist", Component: Masterlist },
+              { path: "import", Component: MasterlistImport },
               { path: "settings", Component: Settings },
             ],
           }

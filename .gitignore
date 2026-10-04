@@ -7,3 +7,8 @@ Thumbs.db
 desktop.ini
 node-v*-win-x64/
 __pycache__/
+
+# One-off script run artifacts — never commit (one logs a local
+# service-account key path).
+scripts/*.log
+scripts/*_dryrun.txt

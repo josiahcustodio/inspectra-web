@@ -25,7 +25,15 @@ export const COLLECTIONS = {
   inspectionLogs: "inspection_logs",
   inspectors: "inspectors",
   profiles: "profiles",
+  // Masterlist import machinery (admin-only in firestore.rules).
+  uploadBatches: "upload_batches",
+  reviewQueue: "review_queue",
 } as const;
+
+// Sub-collection of establishments/{id}: one document per permit-year,
+// written by the masterlist importer. The establishment document carries only
+// the CURRENT permit's fields; past years live here.
+export const PERMITS_SUBCOLLECTION = "permits";
 
 // ─── Document → model mappers ───────────────────────────────────────────────
 // Passed to useCollection. Kept at module scope so their identity is stable
@@ -36,6 +44,7 @@ export const mapCategory = (id: string, data: any): Category => ({
   name: data.name,
   icon_name: data.icon_name ?? null,
   created_at: data.created_at ?? null,
+  sheet_aliases: Array.isArray(data.sheet_aliases) ? data.sheet_aliases : [],
 });
 
 export const mapChecklistTemplate = (id: string, data: any): ChecklistTemplate => ({
@@ -46,14 +55,61 @@ export const mapChecklistTemplate = (id: string, data: any): ChecklistTemplate =
   category_id: data.category_id ?? null,
 });
 
+// The spread carries any field the Flutter client adds that the web app does
+// not know about yet; the explicit lines after it make the declared type true.
+// A document saved without one of these fields arrives as `undefined`, not
+// `null` — see mapInspectionLog below for what that cost.
+// `??` (not `||`) on purpose: a real 0 or "" must survive.
 export const mapEstablishment = (id: string, data: any): Establishment => ({
   ...(data as any),
   id,
+  business_name: data.business_name ?? "",
+  owner_name: data.owner_name ?? null,
+  address: data.address ?? null,
+  barangay: data.barangay ?? null,
+  qr_code_id: data.qr_code_id ?? null,
+  created_at: data.created_at ?? null,
+  personnel_count: data.personnel_count ?? null,
+  personnel_with_hc: data.personnel_with_hc ?? null,
+  sanitary_permit_no: data.sanitary_permit_no ?? null,
+  control_no: data.control_no ?? null,
+  // String(), not a passthrough: production documents hold the NUMBER 1 in
+  // this field alongside "1" and "9" (legacy writes). The declared type says
+  // string, and the masterlist matcher and category filters key Maps on it —
+  // a raw numeric value would silently fall out of every string comparison.
+  category_id: data.category_id != null ? String(data.category_id) : null,
+  category: data.category ?? null,
+  // Masterlist-import fields the matching cascade reads. Normalised here for
+  // the same reason as mapInspectionLog below: an absent field must arrive
+  // as null, not undefined, so `=== null` guards stay trustworthy.
+  business_permit_no: data.business_permit_no ?? null,
+  tin: data.tin ?? null,
+  group: data.group ?? null,
+  masterlist_sheet: data.masterlist_sheet ?? null,
+  status: data.status ?? null,
+  last_seen_batch_id: data.last_seen_batch_id ?? null,
 });
 
+// Every nullable field is normalised rather than left to the spread, because
+// `InspectionLog` declares them `| null` and a document saved without one would
+// otherwise arrive as `undefined` and slip past a `=== null` guard. Five separate
+// display bugs traced to exactly that: a badge reading "Not yet inspected (%)",
+// a tile printing "undefined%", a "Scheduled" log labelled "Completed", and two
+// more. Normalising here makes the declared type honest, so a call site can
+// trust `=== null` — instead of every future reader having to remember not to.
+// `??` (not `||`) on purpose: a score of 0 is a real score and must survive.
 export const mapInspectionLog = (id: string, data: any): InspectionLog => ({
   ...(data as any),
   id,
+  establishment_id: data.establishment_id ?? null,
+  category_id: data.category_id != null ? String(data.category_id) : null,
+  category_name: data.category_name ?? null,
+  inspector_name: data.inspector_name ?? null,
+  total_demerits: data.total_demerits ?? null,
+  percentage_rating: data.percentage_rating ?? null,
+  remarks: data.remarks ?? null,
+  inspection_date: data.inspection_date ?? null,
+  photo_evidence_url: data.photo_evidence_url ?? null,
   results: Array.isArray(data.results) ? data.results : [],
 });
 
@@ -71,6 +127,22 @@ export const mapInspector = (id: string, data: any): Inspector => ({
   totalInspections: data.total_inspections ?? 0,
   completedToday: data.completed_today ?? 0,
   updated_at: data.updated_at ?? "",
+});
+
+// Review-queue items written by the masterlist importer. Normalised like the
+// others so `=== null` guards and array iteration are safe on old documents.
+export const mapReviewQueueItem = (id: string, data: any): import("./models").ReviewQueueItem => ({
+  id,
+  batch_id: data.batch_id ?? "",
+  group: data.group ?? "food",
+  status: data.status ?? "pending",
+  created_at: data.created_at ?? "",
+  decided_at: data.decided_at ?? null,
+  sheet_name: data.sheet_name ?? "",
+  row_number: data.row_number ?? 0,
+  category_id: data.category_id != null ? String(data.category_id) : "",
+  row: data.row ?? {},
+  candidates: Array.isArray(data.candidates) ? data.candidates : [],
 });
 
 // Account documents written by the mobile client on first sign-in

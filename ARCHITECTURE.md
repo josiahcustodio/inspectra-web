@@ -28,6 +28,8 @@ src/
     Inspections.tsx     Submitted inspection logs, paginated, with a details view.
     Inspectors.tsx      The inspector directory, merged from three sources.
     GISMap.tsx          Leaflet map of barangay-level compliance.
+    Masterlist.tsx      Admin-only: the Excel-shaped full-column masterlist grid.
+    MasterlistImport.tsx  Admin-only: Excel masterlist upload, preview, and import.
     Settings.tsx        Account summary and TOTP enrolment.
 
   components/           Shared UI that is specific to this app.
@@ -48,6 +50,12 @@ src/
     useAuth.tsx         Session, profile and role. Wraps Firebase Auth state.
     ConnectionProvider.tsx  Online/offline state for the banner.
     ratingScale.ts      The sanitary rating bands, their labels, ranges and colours.
+    exportPrefs.ts      The masterlist export's one setting (include Category column).
+    import/             The masterlist importer, split by stage so each is readable alone:
+      parseWorkbook.ts  Excel -> clean rows (header detection, layout fallbacks).
+      matchRows.ts      Rows -> decisions (the identity-matching cascade).
+      runImport.ts      Decisions -> Firestore (chunked merge writes, batch audit record).
+      normalize.ts      Text normalisation and name similarity used by the above.
     inspectionDates.ts  Date handling for inspection logs, and the ordering convention.
     barangayGeo.ts      Barangay polygons, name normalisation, and establishment->barangay.
     pagination.ts       Builds the page-number sequence with ellipses.
@@ -141,6 +149,16 @@ build fine and fail at runtime.
 | `INSPECTOR_WRITE` | lib/firestore.ts |
 | `KPI_STATS` | pages/Dashboard.tsx |
 | `LIVE_COLLECTION` | lib/useCollection.ts |
+| `ESTABLISHMENT_DELIST` | pages/Masterlist.tsx |
+| `MASTERLIST_EXPORT_PREFS` | lib/exportPrefs.ts, pages/Settings.tsx |
+| `MASTERLIST_GRID` | pages/Masterlist.tsx |
+| `MASTERLIST_HEADER_DETECT` | lib/import/parseWorkbook.ts |
+| `MASTERLIST_IMPORT_PAGE` | pages/MasterlistImport.tsx |
+| `MASTERLIST_IMPORT_WRITES` | lib/import/runImport.ts |
+| `MASTERLIST_MATCH_CASCADE` | lib/import/matchRows.ts |
+| `MASTERLIST_NORMALIZE` | lib/import/normalize.ts |
+| `MASTERLIST_PARSE` | lib/import/parseWorkbook.ts |
+| `MASTERLIST_REVIEW_QUEUE` | pages/MasterlistImport.tsx |
 | `MFA_TOTP_ENROLL` | pages/Settings.tsx |
 | `OFFLINE_BANNER` | components/Layout.tsx |
 | `OFFLINE_TEARDOWN` | lib/legacyOfflineCleanup.ts |

@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   Building2,
   ClipboardCheck,
+  FileSpreadsheet,
+  Table2,
   Map,
   Users,
   Settings as SettingsIcon,
@@ -26,13 +28,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 // Paths here are deliberately relative — Layout prefixes them per role below,
-// so the six destinations are described once instead of once per role.
-const baseNavItems = [
+// so each destination is described once instead of once per role.
+// `adminOnly` hides a link from officers; the actual gate is the route map
+// (Masterlist Import is mounted only under the admin branch).
+const baseNavItems: { path: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[] = [
   { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "establishments", label: "Establishments", icon: Building2 },
   { path: "inspections", label: "Inspections", icon: ClipboardCheck },
   { path: "gis-map", label: "GIS Map", icon: Map },
   { path: "inspectors", label: "Inspectors", icon: Users },
+  { path: "masterlist", label: "Masterlist", icon: Table2, adminOnly: true },
+  { path: "import", label: "Masterlist Import", icon: FileSpreadsheet, adminOnly: true },
   { path: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -52,7 +58,9 @@ export function Layout() {
   // route is decided by AuthGuard and the route map, never here — so adding an
   // item to baseNavItems does not grant anyone access to it.
   const rolePrefix = role === 'admin' ? '/admin' : '/officer';
-  const navItems = baseNavItems.map(item => ({ ...item, path: `${rolePrefix}/${item.path}` }));
+  const navItems = baseNavItems
+    .filter(item => !item.adminOnly || role === 'admin')
+    .map(item => ({ ...item, path: `${rolePrefix}/${item.path}` }));
 
   const handleSignOut = async () => {
     await signOut(auth);
