@@ -311,36 +311,63 @@ const BPLO_SHIFTED_COLUMN_MAP: ColumnMap = new Map<number, keyof MasterlistRow>(
   [14, "tel_no"],
 ]);
 
-/** Which of the two BPLO shapes a row is in. The address column is the one
- *  that moves, and it is never blank in a real row, so an empty cell 11 with
- *  something in 12 is the shifted shape. */
-function bploMapFor(cells: Cell[]): ColumnMap {
-  const unshifted = cells[11];
-  const shifted = cells[12];
-  const isBlank = unshifted === null || String(unshifted).trim() === "";
-  const nextHasText = shifted !== null && String(shifted).trim() !== "";
-  return isBlank && nextHasText ? BPLO_SHIFTED_COLUMN_MAP : BPLO_COLUMN_MAP;
+/** Which of the two BPLO widths a row is in, given where its block starts. The
+ *  address column is the one that moves, and it is never blank in a real row,
+ *  so an empty address cell with something in the next column is the shifted
+ *  shape. Keys stay relative to the block's own start; the caller shifts them. */
+function bploMapFor(cells: Cell[], offset: number): ColumnMap {
+  const atAddress = cells[offset + 11];
+  const next = cells[offset + 12];
+  const addressBlank = atAddress === null || String(atAddress).trim() === "";
+  const nextHasText = next !== null && String(next).trim() !== "";
+  return addressBlank && nextHasText ? BPLO_SHIFTED_COLUMN_MAP : BPLO_COLUMN_MAP;
 }
 
-/** Whether ONE row is in the BPLO layout, whatever the sheet's own header says.
- *
- *  Sheets are not uniform: several in the real 2026 food workbook hold two
- *  tables — the health office's own columns under the header, then a couple of
- *  blank rows, then the same businesses again as a pasted BPLO export, with no
- *  second header to announce it (Carinderia rows 55+, Catering, and others).
- *  Parsed under the sheet's header map, every one of those rows is shifted by
- *  three columns: the BPLO "Valid Until" date lands in Business Trade Name, so
- *  the import created establishments literally named after a date, with the
- *  line of business in the address field. 18 of them reached the database
- *  before this check existed.
- *
- *  The discriminator is the pair of dates. The header layout has one date
- *  (Date Issued) followed by the trade name; the BPLO layout has Date Issued
- *  and Valid Until side by side. A trade name is never a date, so two
- *  consecutive date cells after a permit number mean this row is BPLO. */
-function isBploRow(cells: Cell[]): boolean {
-  return isPermitNo(cells[2]) && cells[3] instanceof Date && cells[4] instanceof Date;
+/** Every key of `map`, moved right by `by` columns. */
+function shiftColumns(map: ColumnMap, by: number): ColumnMap {
+  if (by === 0) return map;
+  return new Map([...map].map(([index, field]) => [index + by, field]));
 }
+
+/** Where a BPLO-shaped block starts in this row, or null if the row is not one.
+ *
+ *  Sheets are not uniform. Several in the real 2026 food workbook hold two
+ *  tables — the health office's own columns under the header, then a couple of
+ *  blank rows, then the same businesses again as a pasted BPLO export with no
+ *  second header to announce it (Carinderia rows 55+, Catering, others). Read
+ *  under the sheet's header map those rows sit three columns out of step: the
+ *  BPLO "Valid Until" date lands in Business Trade Name, which is how 18
+ *  establishments named after a date reached the database.
+ *
+ *  And the paste does not always start at column A. In Cooked Food rows 77-78
+ *  the block begins at column G, six columns right, which left those two real
+ *  businesses ("NINGNING'S SARI SARI STORE", "KMBM SARI SARI STORE") looking
+ *  like rows with no trade name at all — so they were set aside rather than
+ *  imported. Hence a search for the start rather than a fixed position.
+ *
+ *  The signature searched for is the pair of dates. The header layout has one
+ *  date (Date Issued) followed by the trade name; BPLO has Date Issued and
+ *  Valid Until side by side. A trade name is never a date, so a permit number
+ *  with two date cells after it can only be a BPLO row — which is also why
+ *  this cannot mistake a header-layout row for one. */
+function bploOffsetOf(cells: Cell[]): number | null {
+  const furthest = Math.min(cells.length, MAX_BPLO_OFFSET);
+  for (let offset = 0; offset <= furthest; offset++) {
+    if (
+      isPermitNo(cells[offset + 2]) &&
+      cells[offset + 3] instanceof Date &&
+      cells[offset + 4] instanceof Date
+    ) {
+      return offset;
+    }
+  }
+  return null;
+}
+
+/** How far right a pasted BPLO block is looked for. Six is what the real file
+ *  uses; twelve leaves room without letting the search wander into a row's own
+ *  trailing columns. */
+const MAX_BPLO_OFFSET = 12;
 
 function isPermitNo(cell: Cell): boolean {
   return typeof cell === "string" && PERMIT_NO_PATTERN.test(cell.trim());
@@ -390,9 +417,11 @@ function parseDataRows(
     }
 
     // Per ROW, not per sheet: a header sheet can carry a pasted BPLO table
-    // further down with no header of its own, and BPLO rows themselves come in
-    // two widths. See isBploRow and bploMapFor.
-    const rowMap = isBploRow(cells) ? bploMapFor(cells) : columnMap;
+    // further down with no header of its own, that paste can start at any
+    // column, and BPLO rows themselves come in two widths. See bploOffsetOf.
+    const bploOffset = bploOffsetOf(cells);
+    const rowMap =
+      bploOffset === null ? columnMap : shiftColumns(bploMapFor(cells, bploOffset), bploOffset);
     if (rowMap !== columnMap) alternateLayoutRows += 1;
 
     const row = emptyRow(sheetName, rowNumber);
