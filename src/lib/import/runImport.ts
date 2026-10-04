@@ -65,6 +65,7 @@ export async function executeImport(opts: {
     review: 0,
     duplicates: 0,
     skipped: opts.skippedRows,
+    same_name_new_address: 0,
   };
 
   // Review items use DETERMINISTIC ids (a hash of what identifies the row),
@@ -132,6 +133,10 @@ export async function executeImport(opts: {
             );
             writePermitDoc(batch, newId, decision.row, batchId);
             counters.created += 1;
+            // A new record whose name already exists at another address. The
+            // rule says that is a different business, so nothing was blocked —
+            // this only feeds the report.
+            if (decision.sameNameElsewhere.length > 0) counters.same_name_new_address += 1;
             break;
           }
 
@@ -165,8 +170,8 @@ export async function executeImport(opts: {
               candidates: decision.candidates.map((c) => ({
                 establishment_id: c.establishment.id,
                 business_name: c.establishment.business_name,
-                similarity: Math.round(c.similarity * 100) / 100,
                 reason: c.reason,
+                address_text: c.addressText ?? null,
               })),
             });
             break;

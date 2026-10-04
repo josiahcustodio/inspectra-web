@@ -1,13 +1,20 @@
 // [REF: MASTERLIST_NORMALIZE]
 //
-// Text normalisation and similarity scoring for the masterlist importer.
+// Text normalisation for the masterlist importer.
 //
 // The Excel masterlists are typed by hand, so the importer can never compare
 // raw strings: "JB'S APARTMENT" and "JBs Apartment" are the same business.
-// Every identity comparison goes through normText first, and anything that
-// still doesn't match exactly is scored with a bigram Dice coefficient so a
-// human can review the near-misses (the importer never auto-merges on fuzzy
-// similarity — see [REF: MASTERLIST_MATCH_CASCADE]).
+// Every identity comparison goes through these helpers first, and then the
+// comparison itself is EXACT — see [REF: MASTERLIST_MATCH_CASCADE].
+//
+// There used to be a bigram similarity score here, used to send near-miss
+// names to review. It was removed because it does not work on this data:
+// nearly every name on the city list carries a shared word or a corporate
+// suffix, so unrelated businesses score as lookalikes. Measured on the real
+// 2026 workbooks, a 0.6 cutoff produced over 28,000 "similar" pairs within
+// the first 1,200 rows — against 9 rows that were genuinely the same
+// business — so every real conflict arrived buried in noise. Canonicalise
+// hard, then compare exactly; do not reintroduce scoring.
 
 // The declared parameter types say string, but these helpers also run on
 // values read straight off Firestore documents (owner_name, tin, ...), which
@@ -28,11 +35,11 @@ export function normText(value: string | null | undefined): string {
     .trim();
 }
 
-/** Keep digits only — for TIN and phone comparisons, where "287-016-784-000"
- *  and "287 016 784 000" must be the same key. */
-export function normDigits(value: string | null | undefined): string {
-  return asText(value).replace(/\D+/g, "");
-}
+// There was a normDigits() here, for comparing TINs with the punctuation
+// stripped. It went when the TIN stopped taking part in matching: a TIN
+// identifies the OWNER, and one sole proprietor can hold several businesses,
+// so a TIN match answers a question the importer is not asking. The field is
+// still parsed and stored — it just decides nothing.
 
 /** A permit number as a comparison key: upper-cased, with the spaces and
  *  dashes that vary between hand-typed spellings removed, so "F-261174",
@@ -43,53 +50,55 @@ export function permitKey(permitNo: string): string {
   return asText(permitNo).toUpperCase().replace(/[\s-]+/g, "");
 }
 
-/** Character bigram counts of an ALREADY-normalised string.
- *
- *  Exposed separately from the similarity function so the matcher can build
- *  each establishment's bigrams once at index time instead of on every
- *  comparison — on a first import of a large category sheet, every new row
- *  is compared against every record so far, and rebuilding both bigram maps
- *  per comparison turned that into seconds of blocked UI. */
-export function bigramsOf(normalized: string): Map<string, number> {
-  const m = new Map<string, number>();
-  for (let i = 0; i < normalized.length - 1; i++) {
-    const bg = normalized.slice(i, i + 2);
-    m.set(bg, (m.get(bg) ?? 0) + 1);
-  }
-  return m;
+// Address words the city writes both ways. Expanding them is what makes
+// "15th Drive St." and "15th Drive Street" one address instead of two — the
+// difference between recognising next year's renewal and filing a duplicate.
+// This is canonicalisation, not guessing: each entry is a fixed pair, so the
+// result is the same on every machine and can be explained to an admin.
+// Add to it only from spellings actually seen in a workbook.
+const ADDRESS_WORDS: Record<string, string> = {
+  st: "street", str: "street", ave: "avenue", av: "avenue",
+  rd: "road", blvd: "boulevard", hwy: "highway", drv: "drive", dr: "drive",
+  brgy: "barangay", bgy: "barangay", bo: "barangay", pob: "poblacion",
+  blk: "block", lt: "lot", bldg: "building", subd: "subdivision",
+  cor: "corner", no: "number", nr: "number", unt: "unit", ext: "extension",
+};
+
+/** An address as a comparison key: lowercased, punctuation dropped, and the
+ *  abbreviations above expanded. Word ORDER is preserved on purpose — a token
+ *  set would make "Blk 1 Lot 2" and "Blk 2 Lot 1" the same place. */
+export function addressKey(value: string | null | undefined): string {
+  const words = normText(value).split(" ").filter(Boolean);
+  return words.map((w) => ADDRESS_WORDS[w] ?? w).join(" ");
 }
 
-/** Dice coefficient over precomputed bigram maps, 0..1. */
-export function diceFromBigrams(
-  a: Map<string, number>,
-  aLength: number,
-  b: Map<string, number>,
-  bLength: number,
-): number {
-  const total = Math.max(0, aLength - 1) + Math.max(0, bLength - 1);
-  if (total === 0) return 0;
-  // Iterate the smaller map: overlap is symmetric and this halves the work
-  // when one name is much longer than the other.
-  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
-  let overlap = 0;
-  for (const [bg, count] of small) {
-    overlap += Math.min(count, large.get(bg) ?? 0);
-  }
-  return (2 * overlap) / total;
-}
-
-/** Dice coefficient over character bigrams, 0..1.
+/** Where a business is, as one comparison key: its street address plus its
+ *  barangay. This is half of an establishment's identity — the other half is
+ *  the trade name — because a name on its own is not unique in a city, while
+ *  the same name at a different address is a different business.
  *
- *  Chosen over Levenshtein because it is insensitive to word order
- *  ("Aling Nena Eatery" vs "Eatery ni Aling Nena" still scores high), which
- *  is the most common way the same business is re-typed across masterlists.
- *  Inputs are normalised first so punctuation never affects the score. */
-export function nameSimilarity(a: string, b: string): number {
-  const x = normText(a);
-  const y = normText(b);
-  if (!x || !y) return 0;
-  if (x === y) return 1;
-  return diceFromBigrams(bigramsOf(x), x.length, bigramsOf(y), y.length);
+ *  `barangayCanonical` is passed in rather than resolved here so this module
+ *  stays free of the barangay boundary data; the matcher supplies it through
+ *  canonicalBarangay, which folds alias spellings ("Bucal"/"Bukal").
+ *
+ *  A barangay named inside the address text is removed before the barangay is
+ *  appended, so a row that spells the barangay in the address column matches a
+ *  record that keeps it in its own field. `street` comes back empty when the
+ *  address says nothing beyond the barangay — the matcher treats that as
+ *  "location unknown" and asks a human rather than guessing. */
+export function locationKey(
+  addressText: string | null | undefined,
+  barangayCanonical: string | null | undefined,
+): { street: string; barangay: string; key: string } {
+  const barangay = addressKey(barangayCanonical);
+  const barangayWords = new Set(barangay.split(" ").filter(Boolean));
+
+  const street = addressKey(addressText)
+    .split(" ")
+    .filter((w) => w && !barangayWords.has(w))
+    .join(" ");
+
+  return { street, barangay, key: `${street}#${barangay}` };
 }
 
 /** A JS Date -> "YYYY-MM-DD", using local date parts.

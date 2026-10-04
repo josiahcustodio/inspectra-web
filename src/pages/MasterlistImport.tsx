@@ -95,14 +95,17 @@ export function MasterlistImport() {
         for (const row of sheet.rows) {
           const decision = decideRow(row, group, indexes, permitNosSeen);
           if (decision.kind === "create") {
-            // Pre-assign the id, index the new record immediately, and mark it
-            // as created by this run. A later row in this upload naming the
-            // same business is then caught — as a review item, never as a
-            // renewal onto a record that has no permit history yet — instead
-            // of being created twice.
+            // Pre-assign the id, index the new record immediately, and claim
+            // it for this run. A later row in this upload naming the same
+            // business at the same address is then recognised — as a review
+            // item, never as a renewal onto a record that has no history yet —
+            // instead of being created twice.
             decision.newId = crypto.randomUUID();
-            indexes.createdThisRun.add(decision.newId);
-            addToIndexes(indexes, provisionalEstablishment(decision.newId, row.business_name, row.barangay, row.business_permit_no, row.tin, group, row.sheetName));
+            indexes.claimedThisRun.add(decision.newId);
+            addToIndexes(
+              indexes,
+              provisionalEstablishment(decision.newId, row, group),
+            );
           } else if (decision.kind === "renewal" || decision.kind === "update-permit") {
             // One claim per record per upload: a later row that would land on
             // this same record goes to review instead of overwriting this one.
@@ -244,22 +247,22 @@ export function MasterlistImport() {
 }
 
 // A stand-in Establishment for a row this import is about to create, carrying
-// just the fields the match indexes read. No category — see the page header.
+// the fields the match indexes read. The ADDRESS matters most: identity here is
+// trade name plus address, so a provisional record without its address would be
+// unmatchable by the next row for the same business. No category — see the page
+// header.
 function provisionalEstablishment(
   id: string,
-  businessName: string | null,
-  barangay: string | null,
-  permitNo: string | null,
-  tin: string | null,
+  row: { business_name: string | null; address: string | null; barangay: string | null;
+         business_permit_no: string | null; tin: string | null; sheetName: string },
   group: ImportGroup,
-  sheetName: string,
 ): Establishment {
   return {
     id,
-    business_name: businessName ?? "",
+    business_name: row.business_name ?? "",
     owner_name: null,
-    address: null,
-    barangay,
+    address: row.address,
+    barangay: row.barangay,
     qr_code_id: null,
     created_at: null,
     personnel_count: null,
@@ -268,15 +271,25 @@ function provisionalEstablishment(
     control_no: null,
     category_id: null,
     category: null,
-    business_permit_no: permitNo,
-    tin,
+    business_permit_no: row.business_permit_no,
+    tin: row.tin,
     group,
-    masterlist_sheet: sheetName,
+    masterlist_sheet: row.sheetName,
     status: "active",
   };
 }
 
 // ─── Review queue ───────────────────────────────────────────────────────────
+
+// Each reason is a different question, so each gets its own sentence. Keyed by
+// ReviewReason (lib/import/matchRows.ts); unknown values fall back, so a
+// review item written by an older build still renders.
+const REVIEW_REASON_TEXT: Record<string, string> = {
+  "same-name-same-address": "Already recorded twice at this address:",
+  "same-name-unknown-address": "Same name, and one side has no address to compare:",
+  "already-claimed": "An earlier row in this file already updated:",
+  "same-permit": "This permit number is already on:",
+};
 
 // [REF: MASTERLIST_REVIEW_QUEUE]
 //
@@ -328,13 +341,18 @@ function ReviewQueuePanel() {
       <div className="p-5 border-b border-border">
         <p className="font-bold text-slate-900">Needs your decision ({pending.length})</p>
         <p className="text-sm text-muted-foreground font-medium mt-1">
-          These rows were close to an existing record, so the importer didn't guess.
-          Until you decide, their data is not in the masterlist.
+          The importer only asks when it genuinely cannot tell — the same name at the same
+          address recorded twice, or an address missing on one side. Same name at a different
+          address is imported as a separate business and never lands here.
+          Until you decide, a row's data is not in the masterlist.
         </p>
       </div>
       <div className="divide-y divide-slate-100 max-h-[28rem] overflow-auto">
         {pending.map((item) => {
-          const row = item.row as { business_name?: string; barangay?: string; business_permit_no?: string };
+          const row = item.row as {
+            business_name?: string; barangay?: string;
+            business_permit_no?: string; address?: string;
+          };
           const busy = busyId === item.id;
           return (
             <div key={item.id} className="p-5">
@@ -342,18 +360,27 @@ function ReviewQueuePanel() {
                 <span className="font-bold text-slate-900">{row.business_name ?? "(no name)"}</span>
                 <span className="text-muted-foreground font-medium">
                   {" "}— {item.sheet_name} row {item.row_number}
-                  {row.barangay ? `, ${row.barangay}` : ""}
                   {row.business_permit_no ? ` · ${row.business_permit_no}` : ""}
                 </span>
               </p>
+              {/* The row's own address, so the candidate addresses below have
+                  something to be compared against. */}
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                In the file: {row.address || "(no address)"}
+                {row.barangay ? `, ${row.barangay}` : ""}
+              </p>
               <div className="mt-3 space-y-2">
                 {item.candidates.map((c) => (
-                  <div key={c.establishment_id} className="flex items-center justify-between gap-3 flex-wrap">
-                    <p className="text-sm text-slate-600 font-medium">
-                      {c.reason === "same-tin" ? "Same TIN as" : c.reason === "same-permit" ? "Same permit number as" : "Looks like"}{" "}
-                      <span className="font-bold text-slate-900">{c.business_name}</span>
-                      {" "}({Math.round(c.similarity * 100)}% name match)
-                    </p>
+                  <div key={c.establishment_id} className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="text-sm text-slate-600 font-medium">
+                      <p>
+                        {REVIEW_REASON_TEXT[c.reason] ?? "Possible match:"}{" "}
+                        <span className="font-bold text-slate-900">{c.business_name}</span>
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        On record: {c.address_text || "(no address recorded)"}
+                      </p>
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"
@@ -510,18 +537,23 @@ function ReportStage(props: {
     s.skipped.map((row) => ({ sheetName: s.sheetName, ...row })),
   );
 
+  const sameNameNewAddress = decisions.filter(
+    (d) => d.kind === "create" && d.sameNameElsewhere.length > 0,
+  );
+
   const tiles: { label: string; value: number; tone: string }[] = [
     { label: "Permits updated", value: result.counters.updated, tone: "text-slate-900" },
     { label: "Renewals", value: result.counters.renewals, tone: "text-slate-900" },
     { label: "New establishments", value: result.counters.created, tone: "text-emerald-600" },
     { label: "Need review", value: result.counters.review, tone: result.counters.review > 0 ? "text-amber-600" : "text-slate-400" },
+    { label: "Same name, new address", value: result.counters.same_name_new_address, tone: "text-slate-900" },
     { label: "Missing from file", value: result.missing.length, tone: result.missing.length > 0 ? "text-amber-600" : "text-slate-400" },
     { label: "Rows set aside", value: result.counters.skipped + result.counters.duplicates, tone: "text-slate-400" },
   ];
 
   return (
     <div className="flex flex-col gap-6 overflow-auto min-h-0">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         {tiles.map((tile) => (
           <Card key={tile.label} className="bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border p-4">
             <p className={`text-2xl font-extrabold tabular-nums ${tile.tone}`}>{tile.value}</p>
@@ -530,16 +562,40 @@ function ReportStage(props: {
         ))}
       </div>
 
+      {sameNameNewAddress.length > 0 && (
+        <ReportSection
+          title={`Same name, different address (${sameNameNewAddress.length})`}
+          subtitle="Imported as separate establishments, which is the rule: a shared trade name at another address is another business. Listed only so a mistyped address cannot pass as a second branch unnoticed.">
+          {sameNameNewAddress.slice(0, 200).map((d, i) =>
+            d.kind === "create" ? (
+              <div key={i} className="py-2 text-sm font-medium text-slate-700">
+                <span className="font-bold">{d.row.business_name ?? "(no name)"}</span>
+                <span className="text-muted-foreground">
+                  {" "}— new at {d.row.address || "(no address)"}
+                  {d.row.barangay ? `, ${d.row.barangay}` : ""}; already on record at{" "}
+                  {d.sameNameElsewhere
+                    .map((e) => (typeof e.address === "string" && e.address ? e.address : e.barangay || "unknown address"))
+                    .join(" / ")}
+                </span>
+              </div>
+            ) : null,
+          )}
+          {sameNameNewAddress.length > 200 && (
+            <p className="py-2 text-sm text-muted-foreground font-medium">…and {sameNameNewAddress.length - 200} more.</p>
+          )}
+        </ReportSection>
+      )}
+
       {reviews.length > 0 && (
         <ReportSection
           title={`Needs a human decision (${reviews.length})`}
-          subtitle="Similar names found — these were NOT imported, so a wrong guess can't attach one business's history to another. Decide each one in the 'Needs your decision' panel below.">
+          subtitle="The importer could not tell these apart on name and address alone, so nothing was written. Decide each one in the 'Needs your decision' panel below.">
           {reviews.map((d, i) =>
             d.kind === "review" ? (
               <div key={i} className="py-2 text-sm font-medium text-slate-700">
                 <span className="font-bold">{d.row.business_name ?? "(no name)"}</span>
-                <span className="text-muted-foreground"> — {d.row.sheetName} row {d.row.rowNumber}, looks like: </span>
-                {d.candidates.map((c) => `${c.establishment.business_name} (${Math.round(c.similarity * 100)}%)`).join(", ")}
+                <span className="text-muted-foreground"> — {d.row.sheetName} row {d.row.rowNumber}: </span>
+                {d.candidates.map((c) => c.establishment.business_name).join(", ") || "(no candidate)"}
               </div>
             ) : null,
           )}

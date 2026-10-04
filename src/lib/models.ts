@@ -142,6 +142,11 @@ export interface UploadBatch {
     review: number;
     duplicates: number;
     skipped: number;
+    /** Rows imported as NEW establishments even though the name already
+     *  existed, because the address differs. Not a problem — that is the
+     *  rule — but the report names them so an admin can spot a mistyped
+     *  address masquerading as a second branch. */
+    same_name_new_address: number;
   };
   /** Establishments present in the database but absent from this file —
    *  candidates for delisting, decided by a human, never automatically. */
@@ -167,10 +172,16 @@ export interface ReviewQueueItem {
   candidates: {
     establishment_id: string;
     business_name: string;
-    similarity: number;
-    // "same-tin" candidates can score low on name similarity and still be
-    // the same owner's business — the panel shows why each candidate is here.
+    // Why this record is being offered — "same-name-same-address",
+    // "same-name-unknown-address", "already-claimed" or "same-permit". The
+    // panel words each one as a different question; see ReviewReason in
+    // lib/import/matchRows.ts. There is no similarity score: nothing in the
+    // importer matches on name resemblance any more.
     reason: string;
+    // The candidate's address as stored. The admin's decision is almost
+    // always "is this the same place?", so the panel shows this next to the
+    // row's own address.
+    address_text: string | null;
   }[];
 }
 
