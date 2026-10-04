@@ -83,6 +83,11 @@ export interface SheetParse {
   headerRowNumber: number | null;
   rows: MasterlistRow[];
   skipped: SkippedRow[];
+  /** Rows inside this sheet that were parsed with the OTHER layout — a pasted
+   *  BPLO table under a header sheet (see isBploRow). Surfaced so the preview
+   *  can say so: a sheet silently switching shape halfway is exactly the kind
+   *  of thing an admin should be told about rather than trust. */
+  alternateLayoutRows: number;
   /** Set for unrecognized sheets: why we could not parse them. */
   problem: string | null;
 }
@@ -226,6 +231,7 @@ function parseSheet(sheetName: string, grid: Cell[][]): SheetParse {
     headerRowNumber: null,
     rows: [],
     skipped: [],
+    alternateLayoutRows: 0,
     problem:
       "No header row with a 'Permit No.' column was found, and the rows don't " +
       "match the known headerless (BPLO) layout. This sheet needs to be " +
@@ -260,28 +266,53 @@ function buildColumnMap(headerCells: Cell[]): ColumnMap {
   return map;
 }
 
-/** The 20-column BPLO export layout, by position. Only used when a data row
- *  validates against its three strongest signals; columns we have no use for
- *  (validity date, ownership type, capitalisation, fees) stay in `raw`. */
+/** The 20-column BPLO export layout, by position. Columns we have no use for
+ *  (validity date, ownership type, capitalisation, fees) stay in `raw`.
+ *
+ *  Note there is no barangay column: a BPLO address is one text field with the
+ *  barangay inside it. */
+const BPLO_COLUMN_MAP: ColumnMap = new Map<number, keyof MasterlistRow>([
+  [1, "applic_type"],
+  [2, "business_permit_no"],
+  [3, "permit_date_issued"],
+  [5, "tin"],
+  [7, "business_name"],
+  [8, "line_of_business"],
+  [9, "floor_area_sqm"],
+  [10, "personnel_count"],
+  [11, "address"],
+  [12, "owner_name"],
+  [13, "tel_no"],
+]);
+
+/** Whether a sheet with no header follows the BPLO layout. Accepted only on
+ *  the strength of a real data row: a permit number, a date, and a TIN in the
+ *  positions that layout puts them. */
 function detectBploLayout(grid: Cell[][]): ColumnMap | null {
   const proof = grid
     .slice(0, 10)
     .find((row) => isPermitNo(row[2]) && row[3] instanceof Date && isTin(row[5]));
-  if (!proof) return null;
+  return proof ? BPLO_COLUMN_MAP : null;
+}
 
-  return new Map<number, keyof MasterlistRow>([
-    [1, "applic_type"],
-    [2, "business_permit_no"],
-    [3, "permit_date_issued"],
-    [5, "tin"],
-    [7, "business_name"],
-    [8, "line_of_business"],
-    [9, "floor_area_sqm"],
-    [10, "personnel_count"],
-    [11, "address"],
-    [12, "owner_name"],
-    [13, "tel_no"],
-  ]);
+/** Whether ONE row is in the BPLO layout, whatever the sheet's own header says.
+ *
+ *  Sheets are not uniform: several in the real 2026 food workbook hold two
+ *  tables — the health office's own columns under the header, then a couple of
+ *  blank rows, then the same businesses again as a pasted BPLO export, with no
+ *  second header to announce it (Carinderia rows 55+, Catering, and others).
+ *  Parsed under the sheet's header map, every one of those rows is shifted by
+ *  three columns: the BPLO "Valid Until" date lands in Business Trade Name, so
+ *  the import created establishments literally named after a date, with the
+ *  line of business in the address field. 18 of them reached the database
+ *  before this check existed.
+ *
+ *  The discriminator is the pair of dates. The header layout has one date
+ *  (Date Issued) followed by the trade name; the BPLO layout has Date Issued
+ *  and Valid Until side by side. A trade name is never a date, so two
+ *  consecutive date cells after a permit number mean this row is BPLO. */
+function isBploRow(cells: Cell[]): boolean {
+  return isPermitNo(cells[2]) && cells[3] instanceof Date && cells[4] instanceof Date;
 }
 
 function isPermitNo(cell: Cell): boolean {
@@ -304,6 +335,7 @@ function parseDataRows(
 ): SheetParse {
   const rows: MasterlistRow[] = [];
   const skipped: SkippedRow[] = [];
+  let alternateLayoutRows = 0;
 
   for (let r = firstDataIndex; r < grid.length; r++) {
     const cells = grid[r];
@@ -330,8 +362,13 @@ function parseDataRows(
       continue;
     }
 
+    // Per ROW, not per sheet: a header sheet can carry a pasted BPLO table
+    // further down with no header of its own. See isBploRow.
+    const rowMap = isBploRow(cells) ? BPLO_COLUMN_MAP : columnMap;
+    if (rowMap !== columnMap) alternateLayoutRows += 1;
+
     const row = emptyRow(sheetName, rowNumber);
-    for (const [index, field] of columnMap) {
+    for (const [index, field] of rowMap) {
       assignCell(row, field, cells[index]);
     }
     row.raw = cells.map(serializeCell);
@@ -355,7 +392,7 @@ function parseDataRows(
     }
   }
 
-  return { sheetName, layout, headerRowNumber, rows, skipped, problem: null };
+  return { sheetName, layout, headerRowNumber, rows, skipped, alternateLayoutRows, problem: null };
 }
 
 function emptyRow(sheetName: string, rowNumber: number): MasterlistRow {

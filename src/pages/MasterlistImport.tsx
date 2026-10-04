@@ -509,6 +509,13 @@ function PreviewStage(props: {
                     {sheet.layout === "header"
                       ? `Header on row ${sheet.headerRowNumber}`
                       : "No header (BPLO layout)"}
+                    {/* A sheet that changes column shape halfway is worth
+                        saying out loud rather than quietly handling. */}
+                    {sheet.alternateLayoutRows > 0 && (
+                      <span className="block text-xs text-amber-700 font-medium">
+                        + {sheet.alternateLayoutRows} rows in a second, BPLO-shaped table
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-6 text-sm text-slate-600 font-medium text-right">{sheet.rows.length}</td>
                   <td className="py-3 px-6 text-sm text-slate-600 font-medium text-right">{sheet.skipped.length}</td>
