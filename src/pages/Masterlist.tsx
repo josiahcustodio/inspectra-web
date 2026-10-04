@@ -57,6 +57,14 @@ interface MasterlistRow {
    *  management, and a prose date would overwrite the stored canonical value
    *  on the round trip. */
   dateInspectedExport: string | null;
+  /** The inspection score as the paper form's SSSR column held it. Live from
+   *  the newest inspection's percentage; the spreadsheet's own SSSR text only
+   *  when the establishment has never been inspected through the app. */
+  sssr: string | null;
+  /** The same score for the Excel export: a NUMBER when it is a real
+   *  percentage, so the sheet can sort and average it, and the imported text
+   *  verbatim otherwise. */
+  sssrExport: number | string | null;
   remarks: string | null;
   remarksColor: string | null; // rating colour for live remarks, null for fallbacks
   /** The inspector's sign-off from the latest inspection, embedded into the
@@ -147,6 +155,10 @@ export function Masterlist() {
             category,
             dateInspected: formatShortDate(log.inspection_date),
             dateInspectedExport: isoDatePart(log.inspection_date),
+            // One decimal: percentage_rating is a double, and "87.5" is the
+            // number the inspector's own form showed them.
+            sssr: `${log.percentage_rating.toFixed(1)}%`,
+            sssrExport: log.percentage_rating,
             remarks: ratingLabel(log.percentage_rating),
             remarksColor: ratingColor(log.percentage_rating),
             signatureUrl: log.signature_url ?? null,
@@ -161,6 +173,11 @@ export function Masterlist() {
             category,
             dateInspected: formatShortDate(log.inspection_date),
             dateInspectedExport: isoDatePart(log.inspection_date),
+            // Inspected but unscored: there is no percentage to show, and the
+            // spreadsheet's old SSSR would be a claim about this inspection
+            // that nobody made.
+            sssr: null,
+            sssrExport: null,
             remarks: log.remarks,
             remarksColor: null,
             signatureUrl: log.signature_url ?? null,
@@ -172,10 +189,12 @@ export function Masterlist() {
           category,
           dateInspected: est.import_date_inspected ?? null,
           dateInspectedExport: est.import_date_inspected ?? null,
+          sssr: est.import_sssr ?? null,
+          sssrExport: est.import_sssr ?? null,
           remarks: est.import_remarks ?? null,
           remarksColor: null,
           signatureUrl: null,
-          fromImport: Boolean(est.import_date_inspected || est.import_remarks),
+          fromImport: Boolean(est.import_date_inspected || est.import_remarks || est.import_sssr),
         };
       })
       .filter((row) => {
@@ -258,6 +277,7 @@ export function Masterlist() {
           establishment: r.establishment,
           category: r.category,
           dateInspected: r.dateInspectedExport,
+          sssr: r.sssrExport,
           remarks: r.remarks,
           signatureUrl: r.signatureUrl,
         })),
@@ -430,7 +450,16 @@ export function Masterlist() {
                         <td className="py-2 px-3 text-xs text-slate-600 font-medium">{est.barangay ?? "—"}</td>
                         <td className="py-2 px-3 text-xs text-slate-600 font-medium max-w-48 truncate" title={est.owner_name ?? undefined}>{est.owner_name ?? "—"}</td>
                         <td className="py-2 px-3 text-xs text-slate-600 font-medium tabular-nums">{est.tel_no ?? "—"}</td>
-                        <td className="py-2 px-3 text-xs text-slate-600 font-medium">{est.import_sssr ?? "—"}</td>
+                        {/* Same colour as the Remarks badge beside it, so the
+                            score and the band it falls in read as one answer. */}
+                        <td
+                          className={`py-2 px-3 text-xs tabular-nums text-right ${
+                            row.fromImport ? "text-slate-400 italic font-medium" : "font-bold"
+                          }`}
+                          style={!row.fromImport && row.remarksColor ? { color: row.remarksColor } : undefined}
+                        >
+                          {row.sssr ?? <span className="text-slate-400 font-medium">—</span>}
+                        </td>
                         <td className={`py-2 px-3 text-xs font-medium tabular-nums ${row.fromImport ? "text-slate-400 italic" : "text-slate-900"}`}>
                           {row.dateInspected ?? "—"}
                         </td>
@@ -479,8 +508,9 @@ export function Masterlist() {
 
             <div className="border-t border-border p-3 flex items-center justify-between flex-wrap gap-2">
               <p className="text-xs text-muted-foreground font-medium">
-                Muted-italic Date Inspected / Remarks are values typed in the imported Excel —
-                not yet confirmed by a field inspection through the app.
+                SSSR, Date Inspected and Remarks come from the latest field inspection.
+                Muted-italic values were typed in the imported Excel instead — not yet
+                confirmed by an inspection through the app.
               </p>
               <PageStrip current={clampedPage} pageCount={pageCount} onPageChange={setPage} />
             </div>

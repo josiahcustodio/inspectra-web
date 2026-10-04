@@ -30,6 +30,10 @@ export interface MasterlistExportRow {
   /** Canonical "YYYY-MM-DD", never display prose — an export gets re-imported,
    *  and the import has to round-trip losslessly. */
   dateInspected: string | null;
+  /** The inspection score for the SSSR column. A number when it is a real
+   *  percentage, so the sheet can sort and average it; the imported text as-is
+   *  when the establishment has never been inspected through the app. */
+  sssr: number | string | null;
   remarks: string | null;
   /** Storage download URL of the inspector's sign-off, or null when the
    *  establishment has never been inspected through the app (or the phone has
@@ -73,7 +77,8 @@ const COLUMNS = [
   { header: "REMARKS", width: 20 },
 ] as const;
 
-const DATE_INSPECTED_COLUMN = 14; // 1-based, matches COLUMNS above
+const SSSR_COLUMN = 13; // 1-based, matches COLUMNS above
+const DATE_INSPECTED_COLUMN = 14;
 const CATEGORY_COLUMN = COLUMNS.length + 1;
 
 // A signature PNG is captured ~600px wide. These are the printed dimensions
@@ -173,13 +178,22 @@ export async function buildMasterlistWorkbook(
       est.barangay ?? "",
       est.owner_name ?? "",
       est.tel_no ?? "",
-      est.import_sssr ?? "",
+      row.sssr ?? "",
       row.dateInspected ?? "",
       row.remarks ?? "",
     ];
     if (options.includeCategory) values.push(row.category ?? "");
 
     const sheetRow = sheet.addRow(values);
+
+    // A live score is written as a number so the column can be sorted and
+    // averaged, and formatted so it still READS as a percentage. (Excel's own
+    // "%" format would multiply by 100 and turn 87.5 into 8750%, so the unit
+    // is part of the number format instead.)
+    if (typeof row.sssr === "number") {
+      sheetRow.getCell(SSSR_COLUMN).numFmt = '0.0"%"';
+      sheetRow.getCell(SSSR_COLUMN).alignment = { horizontal: "right" };
+    }
 
     const png = signatures[index];
     if (row.signatureUrl && !png) failed += 1;
