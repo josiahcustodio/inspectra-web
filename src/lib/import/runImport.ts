@@ -145,8 +145,12 @@ export async function executeImport(opts: {
             }
             counters.review += 1;
 
-            const reviewId = stableReviewId(group, decision.row);
-            if (existingReviewIds.has(reviewId)) break; // already queued or already resolved
+            // Already queued (a re-run of this file) or already resolved (the
+            // admin decided this row on an earlier run of this file). Either
+            // way the row is not written again; `counters.review` still counts
+            // it, since the report is per-run and the row did reach review.
+            const reviewId = stableReviewId(group, opts.fileName, decision.row);
+            if (existingReviewIds.has(reviewId)) break;
             existingReviewIds.add(reviewId);
             batch.set(doc(firebaseDb, COLLECTIONS.reviewQueue, reviewId), {
               id: reviewId,
@@ -269,8 +273,10 @@ function establishmentFields(
 
 /** One document per permit-year under the establishment. Keyed by the permit
  *  number itself, so re-importing the same file converges on the same
- *  documents instead of duplicating them. Rows with no permit number (a few
- *  hand-typed ones) update the establishment but leave no permit record. */
+ *  documents instead of duplicating them. Rows with no valid permit number —
+ *  a blank cell, a placeholder like "N/A" or "pending", or a format
+ *  PERMIT_NO_PATTERN does not recognise — update the establishment but leave
+ *  no permit record, and nothing else persists their `raw` cells. */
 function writePermitDoc(
   batch: ReturnType<typeof writeBatch>,
   establishmentId: string,
@@ -299,17 +305,39 @@ function rowForStorage(row: MasterlistRow): Record<string, unknown> {
   return { ...row };
 }
 
-/** A review item's document id, derived from what identifies the row — the
- *  permit number when it has one, the normalised trade name otherwise — so
+/** A review item's document id, derived from what identifies the row, so
  *  re-importing the same file lands on the same document instead of queueing
- *  a duplicate. djb2 over the key, hex-encoded: short, id-safe, and stable. */
-function stableReviewId(group: string, row: MasterlistRow): string {
-  const key = `${group}|${row.sheetName}|${row.business_permit_no ?? normText(row.business_name)}`;
-  let hash = 5381;
+ *  a duplicate.
+ *
+ *  The identity is the permit number when the row has a valid one; otherwise
+ *  the row's recorded fields — name, barangay, owner, address, date issued —
+ *  never the trade name alone: placeholder permits parse as null, and many
+ *  unrelated rows share a name like "Sari-Sari Store", so a name-only key
+ *  made the second such row silently vanish (counted, never queued). The
+ *  file name is part of the key too, so a resolved item from last year's file
+ *  cannot swallow this year's same-looking row — the yearly masterlists carry
+ *  the year in their name. Two 32-bit hashes (djb2 and sdbm) over the key,
+ *  hex-encoded: a single 32-bit hash collides often enough at a few thousand
+ *  items that a lost row was a matter of time. */
+function stableReviewId(group: string, fileName: string, row: MasterlistRow): string {
+  const identity =
+    row.business_permit_no ??
+    [
+      normText(row.business_name),
+      normText(row.barangay),
+      normText(row.owner_name),
+      normText(row.address),
+      row.permit_date_issued ?? "",
+    ].join("|");
+  const key = `${group}|${normText(fileName)}|${row.sheetName}|${identity}`;
+  let djb2 = 5381;
+  let sdbm = 0;
   for (let i = 0; i < key.length; i++) {
-    hash = ((hash << 5) + hash + key.charCodeAt(i)) >>> 0;
+    const c = key.charCodeAt(i);
+    djb2 = ((djb2 << 5) + djb2 + c) >>> 0;
+    sdbm = (c + (sdbm << 6) + (sdbm << 16) - sdbm) >>> 0;
   }
-  return `rq-${hash.toString(16).padStart(8, "0")}-${key.length.toString(16)}`;
+  return `rq-${djb2.toString(16).padStart(8, "0")}${sdbm.toString(16).padStart(8, "0")}`;
 }
 
 // ─── Review-queue resolution ────────────────────────────────────────────────

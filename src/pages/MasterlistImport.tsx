@@ -103,6 +103,10 @@ export function MasterlistImport() {
             decision.newId = crypto.randomUUID();
             indexes.createdThisRun.add(decision.newId);
             addToIndexes(indexes, provisionalEstablishment(decision.newId, row.business_name, row.barangay, row.business_permit_no, row.tin, group, row.sheetName));
+          } else if (decision.kind === "renewal" || decision.kind === "update-permit") {
+            // One claim per record per upload: a later row that would land on
+            // this same record goes to review instead of overwriting this one.
+            indexes.claimedThisRun.add(decision.establishment.id);
           }
           decisions.push(decision);
         }
@@ -277,8 +281,10 @@ function provisionalEstablishment(
 // [REF: MASTERLIST_REVIEW_QUEUE]
 //
 // The second half of the importer's "never auto-merge" promise. Rows whose
-// match was ambiguous (similar name, or same TIN with a different name) were
-// parked in review_queue instead of being imported; this panel is where an
+// match was ambiguous — an exact name shared by several records, a similar
+// name, the same TIN under a different name, or a record an earlier row of
+// the same upload already wrote to — were parked in review_queue instead of
+// being imported; this panel is where an
 // admin lands each one: merge it into the candidate it resembles, create it
 // as a genuinely new business, or dismiss a bad row. Until a row is decided
 // here, its data is NOT in the masterlist — which is why the panel sits on
@@ -344,7 +350,7 @@ function ReviewQueuePanel() {
                 {item.candidates.map((c) => (
                   <div key={c.establishment_id} className="flex items-center justify-between gap-3 flex-wrap">
                     <p className="text-sm text-slate-600 font-medium">
-                      {c.reason === "same-tin" ? "Same TIN as" : "Looks like"}{" "}
+                      {c.reason === "same-tin" ? "Same TIN as" : c.reason === "same-permit" ? "Same permit number as" : "Looks like"}{" "}
                       <span className="font-bold text-slate-900">{c.business_name}</span>
                       {" "}({Math.round(c.similarity * 100)}% name match)
                     </p>
