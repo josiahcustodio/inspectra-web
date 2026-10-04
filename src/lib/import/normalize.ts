@@ -26,6 +26,14 @@ export function normDigits(value: string | null | undefined): string {
   return value.replace(/\D+/g, "");
 }
 
+/** A permit number as a comparison key: upper-cased, with the spaces and
+ *  dashes that vary between hand-typed spellings removed, so "F-261174",
+ *  "F 261174" and "f-261174" all identify the same permit. Only comparisons
+ *  go through here — the stored value keeps the spreadsheet's own spelling. */
+export function permitKey(permitNo: string): string {
+  return permitNo.toUpperCase().replace(/[\s-]+/g, "");
+}
+
 /** Character bigram counts of an ALREADY-normalised string.
  *
  *  Exposed separately from the similarity function so the matcher can build
