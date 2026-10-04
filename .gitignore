@@ -1,14 +1,48 @@
+# Dependencies and build output
 node_modules/
-.env
 dist/
 build/
+
+# Environment files. Vite loads .env, .env.local, .env.[mode] and .env.[mode].local;
+# only the documented template is committed.
+.env
+.env.*
+!.env.example
+
+# Credentials and keys, wherever they land
+serviceAccount*.json
+*serviceaccount*.json
+*service-account*.json
+*-firebase-adminsdk-*.json
+firebase-adminsdk*.json
+client_secret*.json
+credentials*.json
+google-services.json
+GoogleService-Info.plist
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+.npmrc
+
+# Local tool state and logs
+.firebase/
+supabase/.temp/
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# OS cruft
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# A Windows Node distribution was once committed by mistake
 node-v*-win-x64/
 __pycache__/
 
-# One-off script run artifacts — never commit (one logs a local
-# service-account key path).
-scripts/*.log
-scripts/*_dryrun.txt
+# Conventional drop-zone for local secrets
+secrets/

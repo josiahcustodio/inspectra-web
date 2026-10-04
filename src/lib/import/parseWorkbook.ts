@@ -19,6 +19,11 @@
 //     street address, then an unnamed column holding the barangay.
 //   - Sheets with no header follow the 20-column BPLO export layout
 //     (permit no in col 3, TWO dates, a TIN in col 6).
+//   - A "Permit No." cell is not always a permit number: "N/A", "-" and
+//     "pending" all occur. Those parse as null, never as a permit — a
+//     placeholder shared by unrelated rows must not become the identity the
+//     matcher merges them on. (The cell text stays in the row's `raw`; see
+//     MasterlistRow.raw for when that is persisted.)
 //
 // This module is pure: no Firestore, no React — it takes bytes and returns
 // data, so it can be exercised directly against the sample workbooks.
@@ -54,8 +59,11 @@ export interface MasterlistRow {
   import_sssr: string | null;
   import_remarks: string | null;
 
-  /** The original cells, stringified, kept verbatim on the permit record so
-   *  any import decision can be audited later. */
+  /** The original cells, stringified. Persisted verbatim on the permit record
+   *  and on review items (runImport's rowForStorage), so those import decisions
+   *  can be audited later. A row with no valid permit number writes no permit
+   *  record, so for a create/renewal decision on such a row these cells are
+   *  NOT stored anywhere — `raw` is in-memory only until something persists it. */
   raw: (string | number | null)[];
 }
 
@@ -132,7 +140,12 @@ const HEADER_ALIASES: Record<string, keyof MasterlistRow | "ignore"> = {
 };
 
 /** Looks like a permit number: 1-3 letters, optional dash, 3+ digits
- *  ("F-261174", "NF 08123"). The anchor the header/row detectors key on. */
+ *  ("F-261174", "NF 08123"). The anchor the header/row detectors key on, and
+ *  the gate on the Permit No. column itself: a cell that does not match is
+ *  stored as null (its text stays in `raw`; see MasterlistRow.raw for where
+ *  that goes), so a placeholder like "N/A" can never become an identity that
+ *  two unrelated rows share. Any real permit format outside this pattern is
+ *  nulled the same way — silently, as far as the admin can see. */
 const PERMIT_NO_PATTERN = /^[a-z]{1,3}\s?-?\s?\d{3,}$/i;
 
 /** Looks like a TIN once punctuation is stripped: 9+ digits. */
@@ -300,20 +313,22 @@ function parseDataRows(
     }
     row.raw = cells.map(serializeCell);
 
-    // A row counts as real data only if it carries a plausible permit number,
-    // or a business name plus at least two other usable fields. Anything
-    // weaker goes to the skipped list for the admin to eyeball.
+    // A row counts as real data only if it names a business AND either
+    // carries a valid permit number (assignCell has already nulled anything
+    // that is not one) or has at least two other usable fields. A permit
+    // number with no name is not importable: it would create an establishment
+    // called "" that nothing can ever match by name. Anything weaker goes to
+    // the skipped list for the admin to eyeball.
     const usableFields = [
       row.applic_type, row.permit_date_issued, row.line_of_business,
       row.floor_area_sqm, row.personnel_count, row.address, row.barangay,
       row.owner_name, row.tel_no, row.tin,
     ].filter((v) => v !== null).length;
 
-    const hasPermit = row.business_permit_no !== null && PERMIT_NO_PATTERN.test(row.business_permit_no);
-    if (hasPermit || (row.business_name !== null && usableFields >= 2)) {
+    if (row.business_name !== null && (row.business_permit_no !== null || usableFields >= 2)) {
       rows.push(row);
     } else {
-      skipped.push({ rowNumber, reason: "No permit number and too few fields to identify a business", preview: previewOf(cells) });
+      skipped.push({ rowNumber, reason: "No business name, or too few fields to identify a business", preview: previewOf(cells) });
     }
   }
 
@@ -366,7 +381,12 @@ function assignCell(row: MasterlistRow, field: keyof MasterlistRow, cell: Cell):
       return;
     }
     case "business_permit_no": {
-      row.business_permit_no = String(cell).trim().toUpperCase();
+      // Validated, not just stored: "N/A", "-", "PENDING" are placeholders,
+      // not identities. They become null here, so a placeholder can never be
+      // the permit number two unrelated rows share. (A genuinely repeated real
+      // permit number is the matcher's step 0.) The cell text stays in `raw`.
+      const v = String(cell).trim().toUpperCase();
+      row.business_permit_no = PERMIT_NO_PATTERN.test(v) ? v : null;
       return;
     }
     case "applic_type": {
