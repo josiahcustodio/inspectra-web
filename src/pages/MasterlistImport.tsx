@@ -95,10 +95,13 @@ export function MasterlistImport() {
         for (const row of sheet.rows) {
           const decision = decideRow(row, group, indexes, permitNosSeen);
           if (decision.kind === "create") {
-            // Pre-assign the id and index the new record immediately, so a
-            // business appearing twice in this upload matches itself instead
+            // Pre-assign the id, index the new record immediately, and mark it
+            // as created by this run. A later row in this upload naming the
+            // same business is then caught — as a review item, never as a
+            // renewal onto a record that has no permit history yet — instead
             // of being created twice.
             decision.newId = crypto.randomUUID();
+            indexes.createdThisRun.add(decision.newId);
             addToIndexes(indexes, provisionalEstablishment(decision.newId, row.business_name, row.barangay, row.business_permit_no, row.tin, group, row.sheetName));
           }
           decisions.push(decision);
