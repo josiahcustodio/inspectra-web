@@ -75,8 +75,8 @@ export const mapEstablishment = (id: string, data: any): Establishment => ({
   control_no: data.control_no ?? null,
   // String(), not a passthrough: production documents hold the NUMBER 1 in
   // this field alongside "1" and "9" (legacy writes). The declared type says
-  // string, and the masterlist matcher and category filters key Maps on it —
-  // a raw numeric value would silently fall out of every string comparison.
+  // string, and the category filters compare it as one — a raw numeric value
+  // would silently fall out of every string comparison.
   category_id: data.category_id != null ? String(data.category_id) : null,
   category: data.category ?? null,
   // Masterlist-import fields the matching cascade reads. Normalised here for

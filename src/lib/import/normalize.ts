@@ -9,11 +9,20 @@
 // human can review the near-misses (the importer never auto-merges on fuzzy
 // similarity — see [REF: MASTERLIST_MATCH_CASCADE]).
 
+// The declared parameter types say string, but these helpers also run on
+// values read straight off Firestore documents (owner_name, tin, ...), which
+// other clients and console edits have stored as numbers. A non-string is
+// coerced rather than left to throw: one odd record must not abort a whole
+// import. Objects are the caller's problem (see addressTextOf in matchRows).
+function asText(value: unknown): string {
+  if (value == null) return "";
+  return typeof value === "string" ? value : String(value);
+}
+
 /** Lowercase, collapse every run of punctuation/whitespace to one space, trim.
  *  "JB'S APARTMENT" -> "jb s apartment", "Flr. Area (SqM.)" -> "flr area sqm". */
 export function normText(value: string | null | undefined): string {
-  if (!value) return "";
-  return value
+  return asText(value)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
@@ -22,16 +31,16 @@ export function normText(value: string | null | undefined): string {
 /** Keep digits only — for TIN and phone comparisons, where "287-016-784-000"
  *  and "287 016 784 000" must be the same key. */
 export function normDigits(value: string | null | undefined): string {
-  if (!value) return "";
-  return value.replace(/\D+/g, "");
+  return asText(value).replace(/\D+/g, "");
 }
 
 /** A permit number as a comparison key: upper-cased, with the spaces and
  *  dashes that vary between hand-typed spellings removed, so "F-261174",
  *  "F 261174" and "f-261174" all identify the same permit. Only comparisons
- *  go through here — the stored value keeps the spreadsheet's own spelling. */
+ *  go through here — the stored value keeps the parser's spelling (upper-cased,
+ *  spaces and dashes as typed). */
 export function permitKey(permitNo: string): string {
-  return permitNo.toUpperCase().replace(/[\s-]+/g, "");
+  return asText(permitNo).toUpperCase().replace(/[\s-]+/g, "");
 }
 
 /** Character bigram counts of an ALREADY-normalised string.
