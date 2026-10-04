@@ -147,6 +147,12 @@ export interface UploadBatch {
      *  rule — but the report names them so an admin can spot a mistyped
      *  address masquerading as a second branch. */
     same_name_new_address: number;
+    /** Rows imported as their own establishment because the same business at
+     *  the same address already got a record under a DIFFERENT permit number
+     *  in this upload: one permit per permitted activity (a bakery permit and
+     *  a cafe permit at one supermarket). Each is inspected against its own
+     *  checklist, so each needs its own record. */
+    multi_permit_same_place: number;
   };
   /** Establishments present in the database but absent from this file —
    *  candidates for delisting, decided by a human, never automatically. */

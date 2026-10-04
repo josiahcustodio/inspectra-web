@@ -67,6 +67,7 @@ export async function executeImport(opts: {
     duplicates: 0,
     skipped: opts.skippedRows,
     same_name_new_address: 0,
+    multi_permit_same_place: 0,
   };
 
   // Review items use DETERMINISTIC ids (a hash of what identifies the row),
@@ -138,6 +139,7 @@ export async function executeImport(opts: {
             // rule says that is a different business, so nothing was blocked —
             // this only feeds the report.
             if (decision.sameNameElsewhere.length > 0) counters.same_name_new_address += 1;
+            if (decision.samePlaceDifferentPermit.length > 0) counters.multi_permit_same_place += 1;
             break;
           }
 

@@ -285,9 +285,9 @@ function provisionalEstablishment(
 // ReviewReason (lib/import/matchRows.ts); unknown values fall back, so a
 // review item written by an older build still renders.
 const REVIEW_REASON_TEXT: Record<string, string> = {
-  "same-name-same-address": "Already recorded twice at this address:",
+  "same-name-same-address": "Several records share this name and address, and the sheet doesn't say which:",
   "same-name-unknown-address": "Same name, and one side has no address to compare:",
-  "already-claimed": "An earlier row in this file already updated:",
+  "already-claimed": "This row has no permit number, and an earlier row in the file already filled this record:",
   "same-permit": "This permit number is already on:",
 };
 
@@ -547,6 +547,9 @@ function ReportStage(props: {
   const sameNameNewAddress = decisions.filter(
     (d) => d.kind === "create" && d.sameNameElsewhere.length > 0,
   );
+  const multiPermit = decisions.filter(
+    (d) => d.kind === "create" && d.samePlaceDifferentPermit.length > 0,
+  );
 
   const tiles: { label: string; value: number; tone: string }[] = [
     { label: "Permits updated", value: result.counters.updated, tone: "text-slate-900" },
@@ -554,6 +557,7 @@ function ReportStage(props: {
     { label: "New establishments", value: result.counters.created, tone: "text-emerald-600" },
     { label: "Need review", value: result.counters.review, tone: result.counters.review > 0 ? "text-amber-600" : "text-slate-400" },
     { label: "Same name, new address", value: result.counters.same_name_new_address, tone: "text-slate-900" },
+    { label: "Extra permits, same place", value: result.counters.multi_permit_same_place, tone: "text-slate-900" },
     { label: "Missing from file", value: result.missing.length, tone: result.missing.length > 0 ? "text-amber-600" : "text-slate-400" },
     { label: "Rows set aside", value: result.counters.skipped + result.counters.duplicates, tone: "text-slate-400" },
   ];
@@ -568,6 +572,29 @@ function ReportStage(props: {
           </Card>
         ))}
       </div>
+
+      {multiPermit.length > 0 && (
+        <ReportSection
+          title={`Extra permits at the same place (${multiPermit.length})`}
+          subtitle="One business holding several permits — the city issues one per permitted activity, and each is inspected against its own checklist, so each got its own record. Listed so you can confirm these really are separate activities and not the file repeating a row.">
+          {multiPermit.slice(0, 200).map((d, i) =>
+            d.kind === "create" ? (
+              <div key={i} className="py-2 text-sm font-medium text-slate-700">
+                <span className="font-bold">{d.row.business_name ?? "(no name)"}</span>
+                <span className="text-muted-foreground">
+                  {" "}— {d.row.sheetName} row {d.row.rowNumber}, permit {d.row.business_permit_no};
+                  already imported here as {d.samePlaceDifferentPermit.length} other
+                  {d.samePlaceDifferentPermit.length === 1 ? " permit" : " permits"}
+                  {d.row.line_of_business ? ` · this one: ${d.row.line_of_business}` : ""}
+                </span>
+              </div>
+            ) : null,
+          )}
+          {multiPermit.length > 200 && (
+            <p className="py-2 text-sm text-muted-foreground font-medium">…and {multiPermit.length - 200} more.</p>
+          )}
+        </ReportSection>
+      )}
 
       {sameNameNewAddress.length > 0 && (
         <ReportSection

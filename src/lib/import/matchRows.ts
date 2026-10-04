@@ -64,12 +64,16 @@ export type ImportGroup = "food" | "non_food";
 /** Why a row reached a human. Each value is a different question, and the
  *  review panel words it differently — none of them is "these look alike". */
 export type ReviewReason =
-  /** Two or more records already share this name AND this address. */
+  /** Several existing records share this name and address, and the row's own
+   *  sheet does not single one of them out, so which one is renewing is
+   *  genuinely unknown. */
   | "same-name-same-address"
   /** Same name, but one side has no street address, so the
    *  different-address rule cannot be applied. */
   | "same-name-unknown-address"
-  /** This upload already wrote to the matching record. */
+  /** A row with NO permit number landed on a record this upload already
+   *  wrote to. With a permit number the two would be separate activities;
+   *  without one there is nothing to tell them apart. */
   | "already-claimed"
   /** The record's own earlier permit number turned up after it was renewed. */
   | "same-permit";
@@ -90,11 +94,25 @@ export type MatchDecision =
   // `claimedThisRun`, so a second row for the same business in one file is
   // recognised instead of creating it twice.
   //
-  // `sameNameElsewhere` carries the records that share this row's name at
-  // other addresses. They did NOT block the import — the row is a new
-  // establishment either way — but the report lists them, because "two
-  // businesses with one name" is worth an admin's eyes even when it is legal.
-  | { kind: "create"; row: MasterlistRow; newId?: string; sameNameElsewhere: Establishment[] }
+  // Two kinds of near-neighbour are recorded on a create, neither of which
+  // blocked it. Both exist only so the report can say what happened:
+  //
+  //   sameNameElsewhere        same name, another address — a different
+  //                            business that happens to share a name.
+  //   samePlaceDifferentPermit same name AND address, but this upload already
+  //                            wrote a record under a DIFFERENT permit number.
+  //                            One business holding several permits, one per
+  //                            activity — Robinson's holds a bakery permit and
+  //                            a cafe permit; Montemaria Resort holds six, one
+  //                            per ride. Each is inspected against its own
+  //                            checklist, so each is its own record.
+  | {
+      kind: "create";
+      row: MasterlistRow;
+      newId?: string;
+      sameNameElsewhere: Establishment[];
+      samePlaceDifferentPermit: Establishment[];
+    }
   | { kind: "duplicate-in-file"; row: MasterlistRow; firstRowNumber: number };
 
 /** At most this many candidates are carried into one review item: enough to
@@ -115,6 +133,11 @@ interface IndexedEstablishment {
   /** "" when the record names no barangay at all. */
   barangay: string;
   locationKey: string;
+  /** Which masterlist sheet this record last came from. Not identity — a
+   *  tiebreaker, for when several records share a name and address because the
+   *  business holds one permit per activity (its bakery row and its cafe row).
+   *  The sheet is the most stable hint the file gives about which is which. */
+  sheet: string;
 }
 
 export interface MatchIndexes {
@@ -189,6 +212,7 @@ export function addToIndexes(indexes: MatchIndexes, est: Establishment): void {
     street: location.street,
     barangay: location.barangay,
     locationKey: location.key,
+    sheet: normText(est.masterlist_sheet ?? null),
   };
 
   // Stored values are not validated the way parsed rows are — a legacy record
@@ -254,34 +278,75 @@ export function decideRow(
 
   // A row with no trade name cannot be identified at all. The parser already
   // refuses those, so this is a guard rather than a path.
-  if (!nameKey) return { kind: "create", row, sameNameElsewhere: [] };
+  if (!nameKey) return { kind: "create", row, sameNameElsewhere: [], samePlaceDifferentPermit: [] };
 
   const sameName = indexes.byName.get(`${group}|${nameKey}`) ?? [];
   const ungrouped = indexes.byName.get(`${NO_GROUP}|${nameKey}`) ?? [];
   const allSameName = [...sameName, ...ungrouped];
 
-  // Step 2 — same name at the same address: this is last year's business.
+  // Step 2 — same name at the same address.
   const sameIdentity = allSameName.filter((e) => e.locationKey === rowLocation.key);
-  if (sameIdentity.length === 1) {
-    const only = sameIdentity[0];
-    if (isUnclaimed(only.establishment)) {
-      // Both sides must actually say where they are. With no street address on
-      // either side, "same address" only means "same barangay", which is not
-      // enough to merge two inspection histories on.
-      if (rowLocation.street !== "" && only.street !== "") {
-        return { kind: "renewal", row, establishment: only.establishment };
-      }
-      return { kind: "review", row, candidates: [candidate(only, "same-name-unknown-address")] };
-    }
-    return { kind: "review", row, candidates: [candidate(only, "already-claimed")] };
-  }
+  if (sameIdentity.length > 0) {
+    // Records THIS upload already wrote are a different situation from records
+    // that were already in the database, so split them before deciding.
+    const claimed = sameIdentity.filter((e) => !isUnclaimed(e.establishment));
+    const available = sameIdentity.filter((e) => isUnclaimed(e.establishment));
 
-  // Already recorded twice at one address — the list itself is ambiguous.
-  if (sameIdentity.length > 1) {
+    // Nothing left to renew onto: every same-identity record belongs to an
+    // earlier row of THIS file. The city issues one permit per permitted
+    // activity, so a second row at the same name and address carrying its own
+    // permit number is a second activity, not a repeat — Robinson's bakery and
+    // its cafe, each with its own permit and its own checklist. It becomes its
+    // own record. (A row whose permit number genuinely repeats never reaches
+    // here; step 0 set it aside.)
+    //
+    // Without a permit number there is nothing to tell the two apart, and that
+    // is the one case a human has to settle.
+    if (available.length === 0) {
+      if (rowPermit) {
+        return {
+          kind: "create",
+          row,
+          sameNameElsewhere: [],
+          samePlaceDifferentPermit: claimed.slice(0, MAX_REVIEW_CANDIDATES).map((e) => e.establishment),
+        };
+      }
+      return {
+        kind: "review",
+        row,
+        candidates: claimed.slice(0, MAX_REVIEW_CANDIDATES).map((e) => candidate(e, "already-claimed")),
+      };
+    }
+
+    // Both sides must actually say where they are. With no street on either
+    // side, "same address" only means "same barangay", which is not enough to
+    // attach one business's inspection history to another.
+    if (rowLocation.street === "" || available.some((e) => e.street === "")) {
+      return {
+        kind: "review",
+        row,
+        candidates: available.slice(0, MAX_REVIEW_CANDIDATES).map((e) => candidate(e, "same-name-unknown-address")),
+      };
+    }
+
+    if (available.length === 1) {
+      return { kind: "renewal", row, establishment: available[0].establishment };
+    }
+
+    // Several existing records share this name and address — the multi-permit
+    // case again, seen from next year's file. The sheet is the tiebreaker: a
+    // bakery row renews the record that came from the Bakery sheet. Only when
+    // that still leaves more than one does a human decide.
+    const onSameSheet = available.filter((e) => e.sheet === normText(row.sheetName));
+    if (onSameSheet.length === 1) {
+      return { kind: "renewal", row, establishment: onSameSheet[0].establishment };
+    }
     return {
       kind: "review",
       row,
-      candidates: sameIdentity.slice(0, MAX_REVIEW_CANDIDATES).map((e) => candidate(e, "same-name-same-address")),
+      candidates: (onSameSheet.length > 1 ? onSameSheet : available)
+        .slice(0, MAX_REVIEW_CANDIDATES)
+        .map((e) => candidate(e, "same-name-same-address")),
     };
   }
 
@@ -316,9 +381,10 @@ export function decideRow(
       kind: "create",
       row,
       sameNameElsewhere: elsewhere.slice(0, MAX_REVIEW_CANDIDATES).map((e) => e.establishment),
+      samePlaceDifferentPermit: [],
     };
   }
 
   // Step 4 — a name we have never seen.
-  return { kind: "create", row, sameNameElsewhere: [] };
+  return { kind: "create", row, sameNameElsewhere: [], samePlaceDifferentPermit: [] };
 }

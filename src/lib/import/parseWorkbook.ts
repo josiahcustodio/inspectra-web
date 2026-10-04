@@ -295,6 +295,33 @@ function detectBploLayout(grid: Cell[][]): ColumnMap | null {
   return proof ? BPLO_COLUMN_MAP : null;
 }
 
+/** The same BPLO layout with one extra blank column before the address, which
+ *  shifts address / owner / tel one place right.
+ *
+ *  Real rows in both shapes sit next to each other in the food workbook's
+ *  "NON FOOD" sheet: rows 2-3 put the address in column 11, rows 4-5 leave 11
+ *  empty and start it at 12. Read under the unshifted map, those rows lose
+ *  their address entirely and store the ADDRESS as the owner's name — which is
+ *  how "ALFAMART TRADING PHILIPPINES, INC." came to have an owner called
+ *  "Sitio Silangan, Dumantay, Batangas City". */
+const BPLO_SHIFTED_COLUMN_MAP: ColumnMap = new Map<number, keyof MasterlistRow>([
+  ...BPLO_COLUMN_MAP,
+  [12, "address"],
+  [13, "owner_name"],
+  [14, "tel_no"],
+]);
+
+/** Which of the two BPLO shapes a row is in. The address column is the one
+ *  that moves, and it is never blank in a real row, so an empty cell 11 with
+ *  something in 12 is the shifted shape. */
+function bploMapFor(cells: Cell[]): ColumnMap {
+  const unshifted = cells[11];
+  const shifted = cells[12];
+  const isBlank = unshifted === null || String(unshifted).trim() === "";
+  const nextHasText = shifted !== null && String(shifted).trim() !== "";
+  return isBlank && nextHasText ? BPLO_SHIFTED_COLUMN_MAP : BPLO_COLUMN_MAP;
+}
+
 /** Whether ONE row is in the BPLO layout, whatever the sheet's own header says.
  *
  *  Sheets are not uniform: several in the real 2026 food workbook hold two
@@ -363,8 +390,9 @@ function parseDataRows(
     }
 
     // Per ROW, not per sheet: a header sheet can carry a pasted BPLO table
-    // further down with no header of its own. See isBploRow.
-    const rowMap = isBploRow(cells) ? BPLO_COLUMN_MAP : columnMap;
+    // further down with no header of its own, and BPLO rows themselves come in
+    // two widths. See isBploRow and bploMapFor.
+    const rowMap = isBploRow(cells) ? bploMapFor(cells) : columnMap;
     if (rowMap !== columnMap) alternateLayoutRows += 1;
 
     const row = emptyRow(sheetName, rowNumber);
