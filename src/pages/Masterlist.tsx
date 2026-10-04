@@ -35,6 +35,7 @@ import {
 import type { Establishment, InspectionLog } from "@/lib/models";
 import { formatShortDate, isoDatePart } from "@/lib/inspectionDates";
 import { toYmd } from "@/lib/import/normalize";
+import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { exportIncludesCategory } from "@/lib/exportPrefs";
 import { ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModal";
@@ -72,6 +73,7 @@ export function Masterlist() {
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState<"all" | "food" | "non_food">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [barangayFilter, setBarangayFilter] = useState("all");
   const [showDelisted, setShowDelisted] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -175,6 +177,13 @@ export function Masterlist() {
         if (!showDelisted && est.status === "delisted") return false;
         if (groupFilter !== "all" && est.group !== groupFilter) return false;
         if (categoryFilter !== "all" && row.category !== categoryFilter) return false;
+        // Compared through canonicalBarangay so a record still holding an old
+        // raw spelling ("Poblacion 022, Batangas City") is found by the
+        // canonical option in the dropdown. Imports store the canonical name,
+        // but records created by hand on the web form do not.
+        if (barangayFilter !== "all" && (canonicalBarangay(barangayOfEstablishment(est)) ?? "") !== barangayFilter) {
+          return false;
+        }
         if (needle) {
           const haystack = [
             est.business_name,
@@ -192,7 +201,19 @@ export function Masterlist() {
         return true;
       })
       .sort((a, b) => a.establishment.business_name.localeCompare(b.establishment.business_name));
-  }, [estData, latestLogByEstablishment, search, groupFilter, categoryFilter, showDelisted]);
+  }, [estData, latestLogByEstablishment, search, groupFilter, categoryFilter, barangayFilter, showDelisted]);
+
+  // Barangay options, canonicalised and sorted. Built from the records
+  // themselves rather than from the 105 official boundaries, so the dropdown
+  // offers only places the masterlist actually covers.
+  const barangayOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const est of estData ?? []) {
+      const name = canonicalBarangay(barangayOfEstablishment(est));
+      if (name) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+  }, [estData]);
 
   // Filter options come from the data itself — the categories that
   // inspections have actually assigned — not from the categories collection,
@@ -295,6 +316,16 @@ export function Masterlist() {
         >
           <option value="all">All categories</option>
           {categoryOptions.map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+        <select
+          value={barangayFilter}
+          onChange={(e) => { setBarangayFilter(e.target.value); resetPage(); }}
+          className="text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900 max-w-56"
+        >
+          <option value="all">All barangays</option>
+          {barangayOptions.map((name) => (
             <option key={name} value={name}>{name}</option>
           ))}
         </select>

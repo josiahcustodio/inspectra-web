@@ -30,10 +30,18 @@ export const BARANGAY_NAMES: string[] = BARANGAY_BOUNDARIES.features
 // Roughly the centre of Batangas City — the map's home view.
 export const CITY_CENTER: [number, number] = [13.76, 121.055];
 
+/// Saint abbreviations, expanded so "Sta. Clara" meets the boundary set's
+/// "Santa Clara". Applied to both sides of every comparison (the boundary
+/// names go through this function too), so the two can only ever agree. No
+/// barangay in the official 105 contains "sta" or "sto" as a whole word in any
+/// other sense, which is what makes this safe to do by rule.
+const SAINT_WORDS: Record<string, string> = { sta: "santa", sto: "santo" };
+
 /// Strip everything that varies between how a name is stored and how the
 /// boundary set spells it: case, diacritics, the "(Pob.)" suffix on the
-/// numbered poblacion barangays, the ", Isla Verde" island qualifier, and any
-/// punctuation.
+/// numbered poblacion barangays, the ", Batangas City" / ", Isla Verde"
+/// qualifier that follows the first comma, and any punctuation. Saint
+/// abbreviations are expanded last, once the punctuation is gone.
 export function normalizeBarangay(raw: string): string {
   return raw
     .normalize("NFD")
@@ -43,7 +51,20 @@ export function normalizeBarangay(raw: string): string {
     .replace(/,.*$/, " ")
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .split(" ")
+    .map((word) => SAINT_WORDS[word] ?? word)
+    .join(" ");
+}
+
+/// The barangay as text, with the city/province tail removed \u2014 "Alangilan,
+/// Batangas City" becomes "Alangilan". Used only as the fallback when a value
+/// resolves to no boundary at all, so that even an unmappable record is stored
+/// without the noise every row repeats.
+export function barangayWithoutCity(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const head = raw.split(",")[0].trim();
+  return head === "" ? null : head;
 }
 
 // [REF: BARANGAY_ALIASES]
@@ -69,6 +90,37 @@ const BARANGAY_ALIASES: Record<string, string> = {
   mabacong: "Mabacong (Matoco)",
   matoco: "Mabacong (Matoco)",
   "tabangao proper": "Tabangao Aplaya (Tabangao Proper)",
+
+  // ── Spellings the city's own masterlist uses ──────────────────────────
+  // Added from an audit of the real 2026 food and non-food workbooks, with
+  // the row count each one accounted for. Every entry below is a C/K or
+  // vowel difference against the boundary set's spelling, not a judgement:
+  // the city writes "Carsada", the boundaries say "Karsada".
+  "santa rita carsada": "Santa Rita Karsada", // 46 rows
+  "sorosoro carsada": "Sorosoro Karsada", //      7 rows
+  "tinga labac": "Tinga Labak", //              107 rows
+  "conde labac": "Conde Labak", //               23 rows
+  domuclay: "Domoclay", //                       18 rows
+  "mahakot kanluran": "Mahacot Kanluran", //      1 row
+  "mahakot silangan": "Mahacot Silangan", //      (the pair, for symmetry)
+  maapaz: "Maapas", //                            1 row
+  // The boundary name carries the island as a comma qualifier, which
+  // normalizeBarangay strips — so the island spelled without the comma needs
+  // saying explicitly.
+  "san agapito isla verde": "San Agapito, Isla Verde", // 2 rows
+  "san agustin kanluran isla verde": "San Agustin Kanluran, Isla Verde",
+  "san agustin silangan isla verde": "San Agustin Silangan, Isla Verde",
+  "san andres isla verde": "San Andres, Isla Verde",
+  "san antonio isla verde": "San Antonio, Isla Verde",
+
+  // "<name> Proper" is how the masterlist writes the centre barangay of a
+  // cluster, the same convention the boundary set spells out in
+  // "Tabangao Aplaya (Tabangao Proper)". Both of these have an unsuffixed
+  // boundary alongside their Ibaba/Silangan/Pulot siblings, so the centre is
+  // the only reading available — but it IS a reading, so confirm it with the
+  // sanitation office rather than treating it as established.
+  "pinamucan proper": "Pinamucan", //            36 rows
+  "dela paz proper": "Dela Paz", //              19 rows
 };
 
 const BY_NORMALIZED = new Map<string, string>(
@@ -78,13 +130,55 @@ const BY_NORMALIZED = new Map<string, string>(
 /// Resolve a stored barangay string to the boundary name it refers to, or null
 /// when it matches no boundary. Null is a real answer here — it drives the
 /// "unmapped" notice on the map rather than being swallowed.
+/// The numbered town-centre barangays, which the two sources name completely
+/// differently: the boundary set calls them "Barangay 22 (Pob.)" while the
+/// city's masterlist writes "Poblacion 022". Matched by rule rather than by 24
+/// alias entries, since the number is the whole identity — leading zeros are
+/// dropped, and the spelling of the word is not trusted beyond its first six
+/// letters, which is what lets the "Poblacio 009" typo in the real file through
+/// to the right place. Nothing resolves unless the resulting "barangay N" is a
+/// real boundary, so "Poblacion 099" still comes back unmapped.
+const POBLACION_PATTERN = /^poblaci\w*\s*0*(\d+)$/;
+
 export function canonicalBarangay(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const key = normalizeBarangay(raw);
   if (!key) return null;
+
   const alias = BARANGAY_ALIASES[key];
   if (alias) return alias;
-  return BY_NORMALIZED.get(key) ?? null;
+
+  const poblacion = POBLACION_PATTERN.exec(key);
+  if (poblacion) {
+    return BY_NORMALIZED.get(`barangay ${Number(poblacion[1])}`) ?? null;
+  }
+
+  const direct = BY_NORMALIZED.get(key);
+  if (direct) return direct;
+
+  // Last resort: the value is a whole address rather than a barangay, with the
+  // barangay buried in it — "Duluhan, Cuta, Batangas City" names a sitio first.
+  // normalizeBarangay keeps only the text before the first comma, so those
+  // never reach a boundary. Walk the comma-separated parts instead and take the
+  // LAST one that resolves, because an address runs narrow to broad: street,
+  // sitio, barangay, city. Taking the last match is what stops "San Pedro
+  // Street, Alangilan" resolving to the San Pedro barangay.
+  //
+  // This runs only after every rule above has failed, so it cannot change the
+  // answer for any value that already resolved.
+  const parts = raw.split(",");
+  if (parts.length > 1) {
+    let found: string | null = null;
+    for (const part of parts) {
+      const partKey = normalizeBarangay(part);
+      if (!partKey) continue;
+      const hit = BARANGAY_ALIASES[partKey] ?? BY_NORMALIZED.get(partKey);
+      if (hit) found = hit;
+    }
+    if (found) return found;
+  }
+
+  return null;
 }
 
 /// Where an establishment's barangay actually lives on the record. Newer records

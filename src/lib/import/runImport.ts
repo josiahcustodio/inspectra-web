@@ -23,6 +23,7 @@ import type { Establishment, ReviewQueueItem, UploadBatch } from "@/lib/models";
 import type { MasterlistRow } from "./parseWorkbook";
 import type { ImportGroup, MatchDecision } from "./matchRows";
 import { normText } from "./normalize";
+import { barangayWithoutCity, canonicalBarangay } from "@/lib/barangayGeo";
 
 export type ImportCounters = UploadBatch["counters"];
 
@@ -260,7 +261,20 @@ function establishmentFields(
   if (row.business_name) fields.business_name = row.business_name;
   if (row.owner_name) fields.owner_name = row.owner_name;
   if (row.address) fields.address = row.address;
-  if (row.barangay) fields.barangay = row.barangay;
+
+  // The barangay is stored as the OFFICIAL boundary name, not as the
+  // spreadsheet wrote it. Every row in the file repeats ", Batangas City", and
+  // the same place arrives spelled several ways across sheets ("Poblacion
+  // 022" / "Barangay 22", "Sta. Rita Carsada" / "Santa Rita Karsada") — so
+  // storing the raw text leaves the barangay filter showing one place as four
+  // entries and the GIS map unable to plot a quarter of the list. Resolving
+  // once, here, means every reader gets a value that already matches a
+  // boundary. A value that resolves to no boundary at all keeps its own text
+  // minus the city tail, so it stays recognisable in the unmapped report; the
+  // untouched original is always in the permit record's `raw`.
+  if (row.barangay) {
+    fields.barangay = canonicalBarangay(row.barangay) ?? barangayWithoutCity(row.barangay);
+  }
   if (row.tel_no) fields.tel_no = row.tel_no;
   if (row.tin) fields.tin = row.tin;
   if (row.business_permit_no) fields.business_permit_no = row.business_permit_no;
