@@ -139,14 +139,37 @@ const HEADER_ALIASES: Record<string, keyof MasterlistRow | "ignore"> = {
   "signature": "ignore",
 };
 
-/** Looks like a permit number: 1-3 letters, optional dash, 3+ digits
- *  ("F-261174", "NF 08123"). The anchor the header/row detectors key on, and
- *  the gate on the Permit No. column itself: a cell that does not match is
- *  stored as null (its text stays in `raw`; see MasterlistRow.raw for where
- *  that goes), so a placeholder like "N/A" can never become an identity that
- *  two unrelated rows share. Any real permit format outside this pattern is
- *  nulled the same way — silently, as far as the admin can see. */
-const PERMIT_NO_PATTERN = /^[a-z]{1,3}\s?-?\s?\d{3,}$/i;
+/** Looks like a permit number. Two shapes, both counted in the real 2026
+ *  workbooks (food, non-food, and the cloned copy):
+ *
+ *    office prefix + serial          "F-261174", "NF-244307", "NF 08123"
+ *                                    — 9,447 cells, the bulk of the data
+ *    office prefix + year + serial   "BP-2026-6317"
+ *                                    — 92 cells across the three files
+ *
+ *  The second shape is why the optional trailing group exists. An earlier
+ *  version of this pattern allowed only one group of digits, so every
+ *  "BP-2026-…" cell failed the gate below and was stored as null: those rows
+ *  still imported, but with no permit number, which costs them their permit
+ *  record and their strongest match key on the next upload.
+ *
+ *  A leading letter stays mandatory. Nothing in the three workbooks has a
+ *  purely numeric permit number, and the letter is what keeps a stray date
+ *  ("2026-10-05") or a row ordinal out of the permit column. Prefixes
+ *  observed are one or two letters; the limit is four so that a longer office
+ *  code does not need a code change, which is cheap because the digits are
+ *  what actually make the value permit-shaped.
+ *
+ *  This is the anchor the header and row detectors key on, and the gate on
+ *  the Permit No. column itself: a cell that does not match is stored as null
+ *  (its text stays in `raw`; see MasterlistRow.raw for where that goes), so a
+ *  placeholder like "N/A" can never become an identity that two unrelated
+ *  rows share. That cuts both ways, and the widening above does not change
+ *  it: a real permit format this pattern has never seen is nulled just as
+ *  quietly, and the admin is not told. Any future format the city introduces
+ *  has to be added here — check a new workbook's Permit No. column against
+ *  this pattern before trusting an import of it. */
+const PERMIT_NO_PATTERN = /^[a-z]{1,4}\s?-?\s?\d{3,}(?:\s?-\s?\d+)?$/i;
 
 /** Looks like a TIN once punctuation is stripped: 9+ digits. */
 const TIN_PATTERN = /^\d{9,}$/;
