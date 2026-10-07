@@ -104,7 +104,7 @@ export function Inspections() {
   );
 
   // [REF: INSPECTION_DETAILS_VIEW_WEB]
-  // Clicking a record opens its full detail — fetched fresh from Firestore on
+  // Clicking a record opens its full detail — fetched fresh from the database on
   // every open (with the legacy sub-collection fallback), not from the list
   // snapshot, so the dialog always shows what the database holds right now.
   const [selected, setSelected] = useState<InspectionRow | null>(null);

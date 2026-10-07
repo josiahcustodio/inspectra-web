@@ -1,9 +1,9 @@
 // [REF: DOMAIN_MODELS]
 //
-// The shapes the UI works with. These mirror the Firestore documents one-for-one
+// The shapes the UI works with. These mirror the Postgres rows one-for-one
 // (with the inspector document's snake_case field names normalised in
 // firestore.ts) and carry no sync bookkeeping: the app is cloud-only, so a
-// record either exists in Firestore or it does not exist at all.
+// record either exists in the database or it does not exist at all.
 
 export interface Category {
   id: string;

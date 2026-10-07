@@ -1,7 +1,7 @@
 // [REF: INSPECTION_DATE_CONVENTION]
 //
 // One place for reading the timestamps on these records, because there are two
-// kinds of them in Firestore and they must NOT be read the same way.
+// kinds of them in the database and they must NOT be read the same way.
 //
 //   * Zone-less wall clock — "2026-09-28T13:05:00.000". What the Flutter client
 //     writes for `inspection_date`, via DateTime.now().toIso8601String(). There
@@ -42,7 +42,7 @@ function localParts(iso: string | null | undefined): LocalParts | null {
   if (!iso) return null;
 
   // The declared type says string, but these values come straight off
-  // Firestore documents that other clients and console edits can shape —
+  // rows that other clients and past imports have shaped —
   // a Timestamp object or a number here would make .split throw and take
   // down the whole table render for one malformed record. Treat anything
   // that isn't a string as "no date".

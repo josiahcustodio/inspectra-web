@@ -116,7 +116,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             role: 'officer',
             email: user.email,
           });
-          if (insertError) throw new Error(insertError.message);
+          if (insertError) {
+            throw new Error(
+              insertError.code
+                ? `${insertError.code}: ${insertError.message}`
+                : insertError.message,
+            );
+          }
         }
 
         if (mounted) {

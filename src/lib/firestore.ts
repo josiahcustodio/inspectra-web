@@ -1,7 +1,6 @@
 import { supabase } from "./supabase";
 import type {
   Category,
-  ChecklistTemplate,
   Establishment,
   InspectionLog,
   Inspector,
@@ -51,14 +50,6 @@ export const mapCategory = (id: string, data: any): Category => ({
   icon_name: data.icon_name ?? null,
   created_at: data.created_at ?? null,
   sheet_aliases: Array.isArray(data.sheet_aliases) ? data.sheet_aliases : [],
-});
-
-export const mapChecklistTemplate = (id: string, data: any): ChecklistTemplate => ({
-  id,
-  item_name: data.item_name,
-  weight: data.weight ?? null,
-  sub_category: data.sub_category ?? null,
-  category_id: data.category_id ?? null,
 });
 
 // The spread carries any column the Flutter client adds that the web app does
@@ -228,14 +219,7 @@ export async function fetchInspectionDetails(logId: string): Promise<InspectionL
   return mapInspectionLog(data.id, data);
 }
 
-export async function saveInspectionLog(
-  id: string | null,
-  payload: Partial<InspectionLog>,
-): Promise<string> {
-  const rowId = id ?? crypto.randomUUID();
-  const { error } = await supabase
-    .from(COLLECTIONS.inspectionLogs)
-    .upsert({ ...payload, id: rowId });
-  if (error) throw new Error(error.message);
-  return rowId;
-}
+// No saveInspectionLog here, deliberately: inspection logs are written by
+// the mobile client at inspection time; the web admin only reads them. The
+// importer's no-write-path-to-inspections rule (runImport.ts) is the same
+// invariant from the other side.

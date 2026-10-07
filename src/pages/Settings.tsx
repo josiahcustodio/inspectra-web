@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { challengeAndVerifyTotp } from "@/lib/totp";
 import type { Factor } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { toast } from "sonner";
@@ -95,15 +96,7 @@ function SecuritySettings() {
     if (!user || !factorId || code.length !== 6) return;
     setIsLoading(true);
     try {
-      const { data: challenge, error: challengeError } =
-        await supabase.auth.mfa.challenge({ factorId });
-      if (challengeError) throw challengeError;
-      const { error: verifyError } = await supabase.auth.mfa.verify({
-        factorId,
-        challengeId: challenge.id,
-        code,
-      });
-      if (verifyError) throw verifyError;
+      await challengeAndVerifyTotp(factorId, code);
       toast.success("Two-factor authentication enabled");
       setDialogOpen(false);
       setCode("");
@@ -234,7 +227,7 @@ function SecuritySettings() {
 // Category column. Category is web-view data (assigned by inspections, not
 // by the uploaded masterlist), so the official export format leaves it out
 // unless an admin opts in — and it stays empty for anything not yet
-// inspected. Stored in this browser's localStorage, not in Firestore: it is
+// inspected. Stored in this browser's localStorage, not in the database: it is
 // a personal export preference, not shared data.
 function ExportSettings() {
   const [includeCategory, setIncludeCategory] = useState(exportIncludesCategory());
@@ -282,7 +275,7 @@ export function Settings() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Account — read straight from Firebase Auth + the Firestore profile */}
+        {/* Account — read straight from Supabase Auth + the profiles row */}
         <Card className="p-6 bg-white rounded-xl  lg:col-span-2 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">

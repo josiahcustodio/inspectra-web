@@ -7,7 +7,7 @@
 // city's Excel format (no Category column) unless an admin opts in, and the
 // column is empty for anything not yet inspected.
 //
-// localStorage, not Firestore: this is a personal export preference of
+// localStorage, not the database: this is a personal export preference of
 // whoever is sitting at this browser, not shared data about establishments.
 
 const INCLUDE_CATEGORY_KEY = "inspectra.masterlist.exportCategoryColumn";

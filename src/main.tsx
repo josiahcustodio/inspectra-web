@@ -13,7 +13,7 @@ createRoot(document.getElementById("root")!).render(
   <AuthProvider>
     <ConnectionProvider>
       <App />
-      {/* Writes now go straight to Firestore and can genuinely fail, so the
+      {/* Writes now go straight to Postgres and can genuinely fail, so the
           toasts those failures raise need somewhere to render. */}
       <Toaster richColors position="top-right" />
     </ConnectionProvider>

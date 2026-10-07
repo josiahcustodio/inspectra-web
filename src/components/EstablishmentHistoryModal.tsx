@@ -54,7 +54,7 @@ interface EstablishmentHistoryModalProps {
 // right. The checklist half is InspectionChecklistView, the same component the
 // Inspections page mounts, so there is exactly one renderer for it.
 //
-// The shell exists only to own the retry counter. A failed Firestore listener
+// The shell exists only to own the retry counter. A failed live query
 // cannot be restarted in place, so Retry remounts the body by its key, which
 // tears the dead subscription down and opens a fresh one.
 export function EstablishmentHistoryModal({
@@ -104,7 +104,7 @@ function HistoryBody({ open, establishment, onRetry }: HistoryBodyProps) {
 
   // `data` stays undefined until the first snapshot lands, which is the only way
   // to tell "still reading" from "genuinely empty" (see CollectionState.data).
-  // Firestore runs on memoryLocalCache, so that first snapshot is always a
+  // supabase-js keeps no local table cache, so that first read is always a
   // network round-trip — without this the modal claimed a clean record for an
   // establishment whose history simply had not arrived yet.
   const isHistoryLoading = !logsError && logs === undefined;

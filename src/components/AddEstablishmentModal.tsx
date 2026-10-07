@@ -29,7 +29,7 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
   
   const [loading, setLoading] = useState(false);
 
-  // Categories come live from Firestore. The fallback covers a project whose
+  // Categories come live from the database. The fallback covers a project whose
   // `categories` collection has not been seeded yet, so the form still offers a
   // usable choice instead of an empty dropdown. Memoised so its identity stays
   // stable — the reset effect below lists it as a dependency.
@@ -129,7 +129,7 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
         category: category,
       };
 
-      // Written straight to Firestore. There is no local queue behind this: if
+      // Written straight to Postgres. There is no local queue behind this: if
       // the write throws, nothing was saved anywhere and the dialog stays open
       // with the user's input intact so they can retry.
       if (establishmentToEdit) {

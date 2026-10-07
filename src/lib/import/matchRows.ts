@@ -49,7 +49,7 @@
 // Establishments that predate the importer carry no group, so they are
 // candidates for every upload rather than invisible to all of them.
 //
-// No Firestore here: matching runs against in-memory indexes built from one
+// No database here: matching runs against in-memory indexes built from one
 // establishment fetch, so the cascade costs zero reads per row. The caller owns
 // the per-upload state — the permit numbers seen so far, and the ids this run
 // has already written (see `claimedThisRun`).

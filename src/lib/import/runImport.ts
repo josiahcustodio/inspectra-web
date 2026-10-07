@@ -52,6 +52,15 @@ const DECISIONS_PER_CHUNK = 150;
 // inspector scores against — the masterlist's own classifier is its
 // "Line/Kind of Business" column, which imports as a plain field.
 
+// Every thrown write error carries the PostgREST error code (e.g. 42501 =
+// insufficient_privilege) ahead of the message, so callers can branch on the
+// stable code instead of matching prose that may change between releases.
+function writeError(context: string, error: { code?: string | null; message: string }): Error {
+  return new Error(
+    error.code ? `${context}: ${error.code}: ${error.message}` : `${context}: ${error.message}`,
+  );
+}
+
 // PostgREST requires every object in one bulk insert to carry the SAME keys,
 // and establishmentFields() deliberately includes only what the spreadsheet
 // filled in — so payload shapes vary row to row. Group by key signature and
@@ -74,7 +83,7 @@ async function upsertGrouped(
     const { error } = onConflict
       ? await query.upsert(group, { onConflict })
       : await query.upsert(group);
-    if (error) throw new Error(`${table}: ${error.message}`);
+    if (error) throw writeError(table, error);
   }
 }
 
@@ -126,7 +135,7 @@ export async function executeImport(opts: {
       counters,
       missing_establishment_ids: [],
     });
-  if (batchCreateError) throw new Error(batchCreateError.message);
+  if (batchCreateError) throw writeError(COLLECTIONS.uploadBatches, batchCreateError);
 
   // Ids this run touched (matched or created) — the complement, within the
   // file's scope, is the missing-from-file list.
@@ -149,7 +158,8 @@ export async function executeImport(opts: {
               id: est.id,
               ...establishmentFields(decision.row, group, batchId),
             });
-            pushPermitRow(permitRows, est.id, decision.row, batchId);
+            const permit = permitRow(est.id, decision.row, batchId);
+            if (permit) permitRows.push(permit);
             if (decision.kind === "update-permit") counters.updated += 1;
             else counters.renewals += 1;
             break;
@@ -158,14 +168,9 @@ export async function executeImport(opts: {
           case "create": {
             const newId = decision.newId ?? crypto.randomUUID();
             seenEstablishmentIds.add(newId);
-            establishmentRows.push({
-              id: newId,
-              business_name: decision.row.business_name ?? "",
-              created_at: now(),
-              source_batch_id: batchId,
-              ...establishmentFields(decision.row, group, batchId),
-            });
-            pushPermitRow(permitRows, newId, decision.row, batchId);
+            establishmentRows.push(newEstablishmentRow(newId, decision.row, group, batchId));
+            const permit = permitRow(newId, decision.row, batchId);
+            if (permit) permitRows.push(permit);
             counters.created += 1;
             // A new record whose name already exists at another address. The
             // rule says that is a different business, so nothing was blocked —
@@ -232,7 +237,7 @@ export async function executeImport(opts: {
         .from(COLLECTIONS.uploadBatches)
         .update({ counters: { ...counters } })
         .eq("id", batchId);
-      if (progressError) throw new Error(progressError.message);
+      if (progressError) throw writeError(COLLECTIONS.uploadBatches, progressError);
       opts.onProgress?.(Math.min(start + chunk.length, decisions.length), decisions.length);
     }
   } catch (err) {
@@ -273,7 +278,7 @@ export async function executeImport(opts: {
       missing_establishment_ids: missing.slice(0, 2000).map((e) => e.id),
     })
     .eq("id", batchId);
-  if (doneError) throw new Error(doneError.message);
+  if (doneError) throw writeError(COLLECTIONS.uploadBatches, doneError);
 
   return { batchId, counters, missing };
 }
@@ -340,24 +345,47 @@ function establishmentFields(
  *  the same rows instead of duplicating them. The parsed MasterlistRow plus
  *  its raw original cells travel in the `data` jsonb column — the per-record
  *  audit trail. (The Firestore-era '/'→'_' doc-id munging is gone: a permit
- *  number is stored exactly as written.) Rows with no valid permit number —
- *  a blank cell, a placeholder like "N/A" or "pending", or a format
- *  PERMIT_NO_PATTERN does not recognise — update the establishment but leave
- *  no permit record, and nothing else persists their `raw` cells. */
-function pushPermitRow(
-  permitRows: Record<string, unknown>[],
+ *  number is stored exactly as written.)
+ *
+ *  Returns null for rows with no valid permit number — a blank cell, a
+ *  placeholder like "N/A" or "pending", or a format PERMIT_NO_PATTERN does
+ *  not recognise. Those update the establishment but leave no permit record,
+ *  and nothing else persists their `raw` cells.
+ *
+ *  CONTRACT: the import batch path and the review-decision path both store
+ *  permits through this one builder, so the two can never drift on shape. */
+function permitRow(
   establishmentId: string,
   row: MasterlistRow,
   batchId: string,
-): void {
-  if (!row.business_permit_no) return;
-  permitRows.push({
+): Record<string, unknown> | null {
+  if (!row.business_permit_no) return null;
+  return {
     establishment_id: establishmentId,
     permit_no: row.business_permit_no,
     data: rowForStorage(row),
     source_batch_id: batchId,
     imported_at: new Date().toISOString(),
-  });
+  };
+}
+
+/** The full payload for a brand-new establishment: identity + birth fields
+ *  that only exist at creation (created_at, source_batch_id) on top of the
+ *  spreadsheet-driven fields. Shared by the import "create" decision and the
+ *  review panel's "create" action — same reason as permitRow above. */
+function newEstablishmentRow(
+  id: string,
+  row: MasterlistRow,
+  group: ImportGroup,
+  batchId: string,
+): Record<string, unknown> {
+  return {
+    id,
+    business_name: row.business_name ?? "",
+    created_at: new Date().toISOString(),
+    source_batch_id: batchId,
+    ...establishmentFields(row, group, batchId),
+  };
 }
 
 /** A MasterlistRow as stored: every parsed field plus the original cells —
@@ -430,19 +458,15 @@ export async function applyReviewDecision(opts: {
       id: opts.targetEstablishmentId,
       ...establishmentFields(row, item.group, item.batch_id),
     });
-    if (error) throw new Error(error.message);
-    await upsertPermit(opts.targetEstablishmentId, row, item.batch_id);
+    if (error) throw writeError(COLLECTIONS.establishments, error);
+    await writePermit(opts.targetEstablishmentId, row, item.batch_id);
   } else if (action === "create") {
     const newId = crypto.randomUUID();
-    const { error } = await supabase.from(COLLECTIONS.establishments).upsert({
-      id: newId,
-      business_name: row.business_name ?? "",
-      created_at: new Date().toISOString(),
-      source_batch_id: item.batch_id,
-      ...establishmentFields(row, item.group, item.batch_id),
-    });
-    if (error) throw new Error(error.message);
-    await upsertPermit(newId, row, item.batch_id);
+    const { error } = await supabase
+      .from(COLLECTIONS.establishments)
+      .upsert(newEstablishmentRow(newId, row, item.group, item.batch_id));
+    if (error) throw writeError(COLLECTIONS.establishments, error);
+    await writePermit(newId, row, item.batch_id);
   }
 
   const { error: stampError } = await supabase
@@ -453,24 +477,20 @@ export async function applyReviewDecision(opts: {
       ...(action === "merge" ? { resolved_establishment_id: opts.targetEstablishmentId } : {}),
     })
     .eq("id", item.id);
-  if (stampError) throw new Error(stampError.message);
+  if (stampError) throw writeError(COLLECTIONS.reviewQueue, stampError);
 }
 
-async function upsertPermit(
+/** The review path's single-row write of the same permitRow() payload the
+ *  batch path collects into arrays. */
+async function writePermit(
   establishmentId: string,
   row: MasterlistRow,
   batchId: string,
 ): Promise<void> {
-  if (!row.business_permit_no) return;
-  const { error } = await supabase.from(PERMITS_TABLE).upsert(
-    {
-      establishment_id: establishmentId,
-      permit_no: row.business_permit_no,
-      data: rowForStorage(row),
-      source_batch_id: batchId,
-      imported_at: new Date().toISOString(),
-    },
-    { onConflict: "establishment_id,permit_no" },
-  );
-  if (error) throw new Error(error.message);
+  const permit = permitRow(establishmentId, row, batchId);
+  if (!permit) return;
+  const { error } = await supabase
+    .from(PERMITS_TABLE)
+    .upsert(permit, { onConflict: "establishment_id,permit_no" });
+  if (error) throw writeError(PERMITS_TABLE, error);
 }

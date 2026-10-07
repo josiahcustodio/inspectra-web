@@ -25,7 +25,7 @@
 //     matcher merges them on. (The cell text stays in the row's `raw`; see
 //     MasterlistRow.raw for when that is persisted.)
 //
-// This module is pure: no Firestore, no React — it takes bytes and returns
+// This module is pure: no database, no React — it takes bytes and returns
 // data, so it can be exercised directly against the sample workbooks.
 
 import * as XLSX from "xlsx";
@@ -517,7 +517,7 @@ function assignCell(row: MasterlistRow, field: keyof MasterlistRow, cell: Cell):
   }
 }
 
-/** Dates become "YYYY-MM-DD" strings so `raw` is JSON- and Firestore-safe. */
+/** Dates become "YYYY-MM-DD" strings so `raw` stays plain JSON. */
 function serializeCell(cell: Cell): string | number | null {
   if (cell === null) return null;
   if (cell instanceof Date) return toYmd(cell);

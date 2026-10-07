@@ -17,7 +17,7 @@
 // hard, then compare exactly; do not reintroduce scoring.
 
 // The declared parameter types say string, but these helpers also run on
-// values read straight off Firestore documents (owner_name, tin, ...), which
+// values read straight off database rows (owner_name, tin, ...), which
 // other clients and console edits have stored as numbers. A non-string is
 // coerced rather than left to throw: one odd record must not abort a whole
 // import. Objects are the caller's problem (see addressTextOf in matchRows).

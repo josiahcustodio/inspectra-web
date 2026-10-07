@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { ShieldCheck, ShieldQuestion } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { challengeAndVerifyTotp } from "@/lib/totp";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/useAuth";
 
@@ -81,20 +82,14 @@ export function Login() {
     try {
       const { data: factorData, error: listError } = await supabase.auth.mfa.listFactors();
       if (listError) throw listError;
+      // listFactors().totp contains only VERIFIED factors, so [0] can never
+      // pick up an abandoned half-enrolment.
       const factor = factorData.totp[0];
       if (!factor) {
         toast.error("No supported second factor found for this account");
         return;
       }
-      const { data: challenge, error: challengeError } =
-        await supabase.auth.mfa.challenge({ factorId: factor.id });
-      if (challengeError) throw challengeError;
-      const { error: verifyError } = await supabase.auth.mfa.verify({
-        factorId: factor.id,
-        challengeId: challenge.id,
-        code: mfaCode,
-      });
-      if (verifyError) throw verifyError;
+      await challengeAndVerifyTotp(factor.id, mfaCode);
       toast.success("Successfully logged in");
       // The verify call refreshes the session to AAL2; useAuth hears the auth
       // state change, clears needsMfa, and the effect above redirects home.

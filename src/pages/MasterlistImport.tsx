@@ -5,7 +5,7 @@
 //   pick file  ->  preview (choose which sheets to include)  ->  run  ->  report
 //
 // The heavy lifting lives in lib/import/ — parseWorkbook (Excel -> rows),
-// matchRows (rows -> decisions), runImport (decisions -> Firestore). This
+// matchRows (rows -> decisions), runImport (decisions -> Postgres). This
 // page only sequences them and renders their results, so each stage can be
 // read, and later tested, on its own.
 //
@@ -131,7 +131,11 @@ export function MasterlistImport() {
       setPhase({
         step: "failed",
         message:
-          err instanceof Error && /permission|row-level security/i.test(err.message)
+          // 42501 = Postgres insufficient_privilege — the stable signal that
+          // RLS refused the write (runImport prefixes every write error with
+          // its PostgREST code). The prose fallback covers storage-side and
+          // older-gateway phrasings.
+          err instanceof Error && /\b42501\b|permission|row-level security/i.test(err.message)
             ? "The database refused the import writes. The masterlist RLS policies may not be applied yet — ask whoever manages migration/sql/02_rls.sql."
             : `Import stopped: ${err instanceof Error ? err.message : String(err)}. Re-uploading the same file is safe — finished rows are simply confirmed again.`,
       });

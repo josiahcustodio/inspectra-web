@@ -313,7 +313,7 @@ export function GISMap() {
 
   // Restyle in place when the counts, the selection or the shading toggle
   // change. Rebuilding the layer here would drop hover state and re-run
-  // fitBounds on every Firestore snapshot.
+  // fitBounds on every live refetch.
   useEffect(() => {
     layersByNameRef.current.forEach((lyr, name) => {
       lyr.setStyle(styleFor(name, false));

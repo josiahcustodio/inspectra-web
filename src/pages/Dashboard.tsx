@@ -30,7 +30,7 @@ import {
 const glassCard = "bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden cursor-pointer dark:backdrop-blur-xl dark:bg-white/5 dark:border-white/10";
 
 export function Dashboard() {
-  // Live Firestore subscriptions — both stay `undefined` until their first
+  // Live table subscriptions (Supabase Realtime) — both stay `undefined` until their first
   // snapshot lands, which is what keeps the KPI block showing zeroes instead of
   // a half-computed figure while the data is still in flight.
   const { data: establishments } = useCollection(COLLECTIONS.establishments, mapEstablishment);

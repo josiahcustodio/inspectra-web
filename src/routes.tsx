@@ -85,7 +85,7 @@ export const router = createBrowserRouter([
               // Admin branch only — the full Excel-shaped masterlist view,
               // and the importer. The import machinery collections
               // (upload_batches, review_queue) are admin-only in
-              // firestore.rules, so mounting the importer for officers would
+              // the RLS policies (migration/sql/02_rls.sql), so mounting the importer for officers would
               // give them a page whose every write fails.
               { path: "masterlist", Component: Masterlist },
               { path: "import", Component: MasterlistImport },

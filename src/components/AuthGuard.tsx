@@ -49,7 +49,7 @@ export function AuthGuard({ allowedRoles }: AuthGuardProps) {
           </div>
         );
       }
-      // Role is still resolving from Firestore after auth — hold here
+      // Role is still resolving from the profiles table after auth — hold here
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
           <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
