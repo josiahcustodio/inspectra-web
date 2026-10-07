@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, firebaseDb } from './firebase';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from './supabase';
 
 export type AppRole = 'admin' | 'officer' | null;
 
@@ -10,6 +9,11 @@ interface AuthState {
   session: boolean;
   role: AppRole;
   emailVerified: boolean;
+  /** True when this account has a verified TOTP factor but the current
+   *  session is still AAL1 — signed in, second factor not yet presented.
+   *  RLS blocks every table read in that state, so the guards park the
+   *  user on /login where the OTP pane completes the sign-in. */
+  needsMfa: boolean;
   isLoading: boolean;
   error: Error | null;
   refreshUser: () => Promise<void>;
@@ -23,6 +27,7 @@ const AuthContext = createContext<AuthState>({
   session: false,
   role: null,
   emailVerified: false,
+  needsMfa: false,
   isLoading: true,
   error: null,
   refreshUser: noopAsync,
@@ -35,6 +40,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     session: false,
     role: null,
     emailVerified: false,
+    needsMfa: false,
     isLoading: true,
     error: null,
     refreshUser: noopAsync,
@@ -44,32 +50,73 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
+    // With Supabase the email-confirmation state lives on the user object;
+    // Google accounts arrive already confirmed. When confirmation is required
+    // (it is — see migration/apply_phase1.py), an email/password session can
+    // only exist once the address is verified, so this is true for virtually
+    // every live session; the guard pages keep working off it regardless.
+    const verified = (user: User) => user.email_confirmed_at != null;
+
+    // Web MFA is optional (mobile is where it's compulsory), but once a user
+    // HAS enrolled, an AAL1 session must not browse data — the restrictive
+    // RLS policies refuse it server-side, and this flag is how the UI knows
+    // to ask for the code instead of rendering empty tables.
+    const checkMfa = async (): Promise<boolean> => {
+      const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      return data?.currentLevel === 'aal1' && data?.nextLevel === 'aal2';
+    };
+
     // [REF: WEB_PROFILE_BOOTSTRAP]
     const loadProfile = async (user: User) => {
       try {
-        // Get Role from profiles collection
-        const profileRef = doc(firebaseDb, 'profiles', user.uid);
-        const profileSnap = await getDoc(profileRef);
+        const needsMfa = await checkMfa();
+        if (needsMfa) {
+          // Don't touch profiles yet — RLS would refuse the read anyway.
+          if (mounted) {
+            setAuthState(prev => ({
+              ...prev,
+              user,
+              session: true,
+              needsMfa: true,
+              emailVerified: verified(user),
+              isLoading: false,
+              error: null,
+            }));
+          }
+          return;
+        }
+        // Role from the profiles table. The row is created by the
+        // handle_new_user() trigger the moment the auth user is born, so
+        // "no row yet" is a brief race at worst — fall back to a self-insert
+        // for parity with the old client bootstrap (RLS pins it to our own
+        // uid with role 'officer', so this can never grant anything).
+        const { data: profile, error: readError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (readError) throw new Error(readError.message);
 
         let role: AppRole;
-        if (profileSnap.exists()) {
+        if (profile) {
           // Validate rather than trust-cast: a malformed/stale role value here
           // must never propagate, since RoleRedirect has no route for it and
           // would bounce the user in a loop between "/" and "/login".
-          const rawRole = profileSnap.data().role;
+          const rawRole = profile.role;
           role = rawRole === 'admin' || rawRole === 'officer' ? rawRole : 'officer';
         } else {
-          // Bootstrap: mirrors the Flutter client's AuthService.ensureProfile
-          // and the firestore.rules profiles/{uid} `create` rule — a user may
-          // only ever self-create their OWN profile as 'officer', never
-          // 'admin'. Without this write, no profile doc is ever persisted and
-          // every admin-gated rule elsewhere silently fails for this user.
           role = 'officer';
-          await setDoc(profileRef, {
+          // supabase-js returns errors rather than throwing — a discarded
+          // failure here would leave the user with NO profiles row, where
+          // user_role() is NULL and every RLS policy filters all rows: a
+          // signed-in app in which every table is silently empty. Throw into
+          // the catch below so the retryProfile UI surfaces instead.
+          const { error: insertError } = await supabase.from('profiles').insert({
+            id: user.id,
             role: 'officer',
             email: user.email,
-            created_at: new Date().toISOString(),
           });
+          if (insertError) throw new Error(insertError.message);
         }
 
         if (mounted) {
@@ -78,23 +125,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             user,
             session: true,
             role: role || 'officer',
-            emailVerified: user.emailVerified,
+            emailVerified: verified(user),
+            needsMfa: false,
             isLoading: false,
             error: null,
           }));
         }
       } catch (error) {
         if (mounted) {
-          // The Firestore profile read failed, but Firebase Auth itself
-          // still has this user signed in — keep session/user set so
-          // AuthGuard doesn't bounce them to /login. role stays whatever it
-          // was (usually null), and retryProfile lets the UI offer a retry
-          // instead of leaving them stuck behind an infinite spinner.
+          // The profile read failed, but the auth session itself is live —
+          // keep session/user set so AuthGuard doesn't bounce them to /login.
+          // role stays whatever it was (usually null), and retryProfile lets
+          // the UI offer a retry instead of an infinite spinner.
           setAuthState(prev => ({
             ...prev,
             user,
             session: true,
-            emailVerified: user.emailVerified,
+            emailVerified: verified(user),
             isLoading: false,
             error: error as Error,
           }));
@@ -103,26 +150,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const refreshUser = async () => {
-      if (!auth.currentUser) return;
-      await auth.currentUser.reload();
-      if (auth.currentUser && mounted) {
+      // getUser() asks the auth server, so a verification that happened in
+      // another tab (clicking the email link) is visible here — the cached
+      // session alone would keep reporting the old state.
+      const { data, error } = await supabase.auth.getUser();
+      if (!error && data.user && mounted) {
+        const user = data.user;
         setAuthState(prev => ({
           ...prev,
-          user: auth.currentUser,
-          emailVerified: auth.currentUser!.emailVerified,
+          user,
+          emailVerified: verified(user),
         }));
       }
     };
 
     const retryProfile = async () => {
-      if (!auth.currentUser) return;
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) return;
       setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
-      await loadProfile(auth.currentUser);
+      await loadProfile(data.user);
     };
 
     // [REF: WEB_AUTH_STATE]
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
+    // The listener also fires INITIAL_SESSION on page load, so there is no
+    // separate getSession() bootstrap. The body defers real work out of the
+    // callback (supabase-js holds an internal auth lock while it runs;
+    // awaiting other client calls inside it can deadlock).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
         if (mounted) {
           setAuthState(prev => ({
             ...prev,
@@ -130,6 +185,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             session: false,
             role: null,
             emailVerified: false,
+            needsMfa: false,
             isLoading: false,
             refreshUser: noopAsync,
             retryProfile: noopAsync,
@@ -138,13 +194,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
+      const user = session.user;
       setAuthState(prev => ({ ...prev, refreshUser, retryProfile }));
-      await loadProfile(user);
+      setTimeout(() => {
+        if (mounted) void loadProfile(user);
+      }, 0);
     });
 
     return () => {
       mounted = false;
-      unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 

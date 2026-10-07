@@ -1,13 +1,6 @@
-import { useState } from "react";
-import {
-  multiFactor,
-  TotpMultiFactorGenerator,
-  EmailAuthProvider,
-  GoogleAuthProvider,
-  reauthenticateWithCredential,
-  reauthenticateWithPopup,
-  type TotpSecret,
-} from "firebase/auth";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import type { Factor } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -33,35 +26,36 @@ import { exportIncludesCategory, setExportIncludesCategory } from "@/lib/exportP
 
 // [REF: MFA_TOTP_ENROLL]
 //
-// TOTP enrolment is a three-step dialog, but the steps are not walked in order.
-// It opens on "qr", because that is the happy path: a user who signed in moments
-// ago already has a fresh enough token to mint a secret. "reauth" is entered
-// reactively — only once Firebase rejects getSession() with
-// `auth/requires-recent-login` — and on success it re-enters beginEnrollment(),
-// so reauth is a detour that rejoins the flow rather than a first step.
+// TOTP enrolment is a two-step dialog: scan the QR, confirm a code. The
+// Firebase-era "reauth" detour is gone — Supabase lets a signed-in session
+// start an enrolment without a recent-login proof; the confirmation code is
+// itself the proof, and verifying it also upgrades this session to AAL2.
 function SecuritySettings() {
   const { user } = useAuth();
-  const enrolledTotp = user
-    ? multiFactor(user).enrolledFactors.find((f) => f.factorId === TotpMultiFactorGenerator.FACTOR_ID)
-    : undefined;
+
+  // The enrolled-factor state lives server-side; listFactors() is the truth.
+  // Reloaded after every enrol/unenroll via the counter.
+  const [enrolledTotp, setEnrolledTotp] = useState<Factor | undefined>(undefined);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [step, setStep] = useState<"reauth" | "qr" | "code">("qr");
-  const [reauthPassword, setReauthPassword] = useState("");
-  const [totpSecret, setTotpSecret] = useState<TotpSecret | null>(null);
+  const [step, setStep] = useState<"qr" | "code">("qr");
+  const [factorId, setFactorId] = useState<string | null>(null);
+  const [totpSecret, setTotpSecret] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  // enrolledTotp is read synchronously off the `user` object, and Firebase
-  // mutates that object in place when a factor is enrolled or removed — the
-  // reference never changes, so React has no reason to re-render and the card
-  // would keep showing the pre-change state. Bumping this unused counter is
-  // what forces the re-read.
-  const [, forceRerender] = useState(0);
 
-  // Decides which proof of identity the reauth step can ask for: a Google-only
-  // account has no password to type, so it has to go back through the popup.
-  const usesPassword = user?.providerData.some((p) => p.providerId === "password") ?? false;
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    supabase.auth.mfa.listFactors().then(({ data }) => {
+      if (!cancelled) setEnrolledTotp(data?.totp[0]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, reloadCounter]);
 
   const beginEnrollment = async () => {
     if (!user) return;
@@ -69,40 +63,28 @@ function SecuritySettings() {
     setStep("qr");
     setIsLoading(true);
     try {
-      const session = await multiFactor(user).getSession();
-      const secret = await TotpMultiFactorGenerator.generateSecret(session);
-      const otpauthUrl = secret.generateQrCodeUrl(user.email ?? user.uid, "Inspectra");
-      const dataUrl = await QRCode.toDataURL(otpauthUrl, { width: 220, margin: 1 });
-      setTotpSecret(secret);
+      // An abandoned earlier attempt leaves an unverified factor behind, and
+      // a second enroll would then be refused — clear any such leftover first.
+      const { data: existing } = await supabase.auth.mfa.listFactors();
+      for (const f of existing?.all ?? []) {
+        if (f.factor_type === "totp" && f.status === "unverified") {
+          await supabase.auth.mfa.unenroll({ factorId: f.id });
+        }
+      }
+
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: "Authenticator app",
+        issuer: "Inspectra",
+      });
+      if (error) throw error;
+      const dataUrl = await QRCode.toDataURL(data.totp.uri, { width: 220, margin: 1 });
+      setFactorId(data.id);
+      setTotpSecret(data.totp.secret);
       setQrDataUrl(dataUrl);
     } catch (err: any) {
-      if (err.code === "auth/requires-recent-login") {
-        setStep("reauth");
-      } else {
-        toast.error(err.message || "Failed to start 2FA setup");
-        setDialogOpen(false);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleReauth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    setIsLoading(true);
-    try {
-      if (usesPassword) {
-        if (!user.email) throw new Error("No email on account");
-        const credential = EmailAuthProvider.credential(user.email, reauthPassword);
-        await reauthenticateWithCredential(user, credential);
-      } else {
-        await reauthenticateWithPopup(user, new GoogleAuthProvider());
-      }
-      setReauthPassword("");
-      await beginEnrollment();
-    } catch (err: any) {
-      toast.error(err.message || "Re-authentication failed");
+      toast.error(err.message || "Failed to start 2FA setup");
+      setDialogOpen(false);
     } finally {
       setIsLoading(false);
     }
@@ -110,16 +92,24 @@ function SecuritySettings() {
 
   const handleConfirmCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !totpSecret || code.length !== 6) return;
+    if (!user || !factorId || code.length !== 6) return;
     setIsLoading(true);
     try {
-      const assertion = TotpMultiFactorGenerator.assertionForEnrollment(totpSecret, code);
-      await multiFactor(user).enroll(assertion, "Authenticator app");
+      const { data: challenge, error: challengeError } =
+        await supabase.auth.mfa.challenge({ factorId });
+      if (challengeError) throw challengeError;
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId,
+        challengeId: challenge.id,
+        code,
+      });
+      if (verifyError) throw verifyError;
       toast.success("Two-factor authentication enabled");
       setDialogOpen(false);
       setCode("");
+      setFactorId(null);
       setTotpSecret(null);
-      forceRerender((n) => n + 1);
+      setReloadCounter((n) => n + 1);
     } catch (err: any) {
       toast.error(err.message || "Invalid code, try again");
     } finally {
@@ -130,9 +120,10 @@ function SecuritySettings() {
   const handleUnenroll = async () => {
     if (!user || !enrolledTotp) return;
     try {
-      await multiFactor(user).unenroll(enrolledTotp.uid);
+      const { error } = await supabase.auth.mfa.unenroll({ factorId: enrolledTotp.id });
+      if (error) throw error;
       toast.success("Two-factor authentication disabled");
-      forceRerender((n) => n + 1);
+      setReloadCounter((n) => n + 1);
     } catch (err: any) {
       toast.error(err.message || "Failed to disable 2FA");
     }
@@ -151,7 +142,7 @@ function SecuritySettings() {
         <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
           <div>
             <p className="font-bold text-slate-900">Authenticator app enabled</p>
-            <p className="text-sm text-slate-500">{enrolledTotp.displayName ?? "TOTP factor"}</p>
+            <p className="text-sm text-slate-500">{enrolledTotp.friendly_name ?? "TOTP factor"}</p>
           </div>
           <Button variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={handleUnenroll}>
             <Trash2 className="w-4 h-4" />
@@ -172,37 +163,6 @@ function SecuritySettings() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-sm">
-          {step === "reauth" && (
-            <form onSubmit={handleReauth}>
-              <DialogHeader>
-                <DialogTitle>Confirm it's you</DialogTitle>
-                <DialogDescription>
-                  This is a sensitive action — please re-authenticate to continue.
-                </DialogDescription>
-              </DialogHeader>
-              {usesPassword ? (
-                <div className="space-y-2 py-4">
-                  <Label htmlFor="reauth-password">Password</Label>
-                  <Input
-                    id="reauth-password"
-                    type="password"
-                    value={reauthPassword}
-                    onChange={(e) => setReauthPassword(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-              ) : (
-                <p className="py-4 text-sm text-slate-500">Click continue to confirm with Google.</p>
-              )}
-              <DialogFooter>
-                <Button type="submit" disabled={isLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                  Continue
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-
           {step === "qr" && (
             <>
               <DialogHeader>
@@ -220,7 +180,7 @@ function SecuritySettings() {
                     <p className="text-xs text-slate-500 text-center">
                       Can't scan? Enter this key manually:
                       <br />
-                      <span className="font-mono font-bold text-slate-900 break-all">{totpSecret?.secretKey}</span>
+                      <span className="font-mono font-bold text-slate-900 break-all">{totpSecret}</span>
                     </p>
                   </>
                 )}

@@ -7,7 +7,7 @@ interface AuthGuardProps {
 
 // [REF: WEB_AUTH_GUARD]
 export function AuthGuard({ allowedRoles }: AuthGuardProps) {
-  const { session, role, emailVerified, isLoading, error, retryProfile } = useAuth();
+  const { session, role, emailVerified, needsMfa, isLoading, error, retryProfile } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -21,6 +21,12 @@ export function AuthGuard({ allowedRoles }: AuthGuardProps) {
   // Not logged in
   if (!session) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Signed in but still owing the second factor — RLS refuses every read in
+  // this state, so park on /login where the OTP pane finishes the sign-in.
+  if (needsMfa) {
+    return <Navigate to="/login" replace />;
   }
 
   // Email/password accounts must verify before they can use the app.

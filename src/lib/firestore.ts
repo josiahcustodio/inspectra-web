@@ -1,5 +1,4 @@
-import { collection, doc, deleteDoc, getDoc, getDocs, setDoc } from "firebase/firestore";
-import { firebaseDb } from "./firebase";
+import { supabase } from "./supabase";
 import type {
   Category,
   ChecklistTemplate,
@@ -11,12 +10,18 @@ import type {
 
 // [REF: CLOUD_DATA_ACCESS]
 //
-// Every read and write in the admin app goes straight to Firestore — there is no
-// local mirror and no push/pull sync step. Reads are live subscriptions (see
-// useCollection), so a change made here or by the mobile client shows up in the
-// UI as soon as Firestore acknowledges it. Writes fail loudly when the network
-// is down rather than being queued, because a queued write with nowhere durable
-// to live is just data loss with a delay.
+// Every read and write in the admin app goes straight to Supabase (Postgres
+// via PostgREST) — there is no local mirror and no push/pull sync step. Reads
+// are live subscriptions (see useCollection), so a change made here or by the
+// mobile client shows up in the UI as soon as the database acknowledges it.
+// Writes fail loudly when the network is down rather than being queued,
+// because a queued write with nowhere durable to live is just data loss with
+// a delay.
+//
+// The file keeps its historical name (firestore.ts) so the forty-odd import
+// sites didn't churn in the migration commit; the exported surface is
+// unchanged. TABLE names are identical to the old Firestore collection names
+// — the Postgres schema was created 1:1 (see migration/sql/01_schema.sql).
 
 export const COLLECTIONS = {
   categories: "categories",
@@ -25,19 +30,20 @@ export const COLLECTIONS = {
   inspectionLogs: "inspection_logs",
   inspectors: "inspectors",
   profiles: "profiles",
-  // Masterlist import machinery (admin-only in firestore.rules).
+  // Masterlist import machinery (admin-only in RLS).
   uploadBatches: "upload_batches",
   reviewQueue: "review_queue",
 } as const;
 
-// Sub-collection of establishments/{id}: one document per permit-year,
-// written by the masterlist importer. The establishment document carries only
-// the CURRENT permit's fields; past years live here.
-export const PERMITS_SUBCOLLECTION = "permits";
+// Past permit-years, written by the masterlist importer. Was a Firestore
+// sub-collection of establishments/{id}; now a real table keyed on
+// (establishment_id, permit_no).
+export const PERMITS_TABLE = "establishment_permits";
 
-// ─── Document → model mappers ───────────────────────────────────────────────
+// ─── Row → model mappers ────────────────────────────────────────────────────
 // Passed to useCollection. Kept at module scope so their identity is stable
-// across renders.
+// across renders. Signature unchanged from the Firestore era: (id, data) —
+// useCollection passes (row.id, row).
 
 export const mapCategory = (id: string, data: any): Category => ({
   id,
@@ -55,10 +61,11 @@ export const mapChecklistTemplate = (id: string, data: any): ChecklistTemplate =
   category_id: data.category_id ?? null,
 });
 
-// The spread carries any field the Flutter client adds that the web app does
+// The spread carries any column the Flutter client adds that the web app does
 // not know about yet; the explicit lines after it make the declared type true.
-// A document saved without one of these fields arrives as `undefined`, not
-// `null` — see mapInspectionLog below for what that cost.
+// Postgres returns NULL (not undefined) for empty columns, which makes most of
+// these normalisations no-ops — they stay as belt-and-braces so the declared
+// `| null` types remain honest even if a column goes missing from a select.
 // `??` (not `||`) on purpose: a real 0 or "" must survive.
 export const mapEstablishment = (id: string, data: any): Establishment => ({
   ...(data as any),
@@ -73,15 +80,12 @@ export const mapEstablishment = (id: string, data: any): Establishment => ({
   personnel_with_hc: data.personnel_with_hc ?? null,
   sanitary_permit_no: data.sanitary_permit_no ?? null,
   control_no: data.control_no ?? null,
-  // String(), not a passthrough: production documents hold the NUMBER 1 in
-  // this field alongside "1" and "9" (legacy writes). The declared type says
-  // string, and the category filters compare it as one — a raw numeric value
-  // would silently fall out of every string comparison.
+  // String(), not a passthrough: the column is text, but historical writes
+  // held the NUMBER 1 alongside "1" and "9", and the category filters compare
+  // as strings. The load-time transform coerced everything, so this is now
+  // insurance rather than a live repair.
   category_id: data.category_id != null ? String(data.category_id) : null,
   category: data.category ?? null,
-  // Masterlist-import fields the matching cascade reads. Normalised here for
-  // the same reason as mapInspectionLog below: an absent field must arrive
-  // as null, not undefined, so `=== null` guards stay trustworthy.
   business_permit_no: data.business_permit_no ?? null,
   tin: data.tin ?? null,
   group: data.group ?? null,
@@ -91,12 +95,9 @@ export const mapEstablishment = (id: string, data: any): Establishment => ({
 });
 
 // Every nullable field is normalised rather than left to the spread, because
-// `InspectionLog` declares them `| null` and a document saved without one would
-// otherwise arrive as `undefined` and slip past a `=== null` guard. Five separate
-// display bugs traced to exactly that: a badge reading "Not yet inspected (%)",
-// a tile printing "undefined%", a "Scheduled" log labelled "Completed", and two
-// more. Normalising here makes the declared type honest, so a call site can
-// trust `=== null` — instead of every future reader having to remember not to.
+// `InspectionLog` declares them `| null` and a row served without one would
+// otherwise arrive as `undefined` and slip past a `=== null` guard. Five
+// separate display bugs traced to exactly that in the Firestore era.
 // `??` (not `||`) on purpose: a score of 0 is a real score and must survive.
 export const mapInspectionLog = (id: string, data: any): InspectionLog => ({
   ...(data as any),
@@ -115,9 +116,9 @@ export const mapInspectionLog = (id: string, data: any): InspectionLog => ({
   results: Array.isArray(data.results) ? data.results : [],
 });
 
-// The inspector document uses snake_case field names (the Flutter client writes
-// it too); the UI works in camelCase. Normalise on the way in and out so the
-// two clients keep agreeing on the stored shape.
+// The inspectors table uses snake_case column names (the stored shape both
+// clients agreed on); the UI works in camelCase. Normalise on the way in and
+// out so the stored shape never drifts.
 export const mapInspector = (id: string, data: any): Inspector => ({
   id,
   name: data.name ?? "",
@@ -132,7 +133,7 @@ export const mapInspector = (id: string, data: any): Inspector => ({
 });
 
 // Review-queue items written by the masterlist importer. Normalised like the
-// others so `=== null` guards and array iteration are safe on old documents.
+// others so `=== null` guards and array iteration are safe on old rows.
 export const mapReviewQueueItem = (id: string, data: any): import("./models").ReviewQueueItem => ({
   id,
   batch_id: data.batch_id ?? "",
@@ -147,10 +148,10 @@ export const mapReviewQueueItem = (id: string, data: any): import("./models").Re
   candidates: Array.isArray(data.candidates) ? data.candidates : [],
 });
 
-// Account documents written by the mobile client on first sign-in
-// (see ensureProfile in the Flutter app's auth_service.dart). These are the
-// real registered inspector accounts; the `inspectors` collection above is
-// only the admin-curated directory.
+// Account rows (`profiles`), created by the handle_new_user() trigger the
+// moment an auth user is born — the client-side bootstrap writes of the
+// Firebase era are gone. These are the real registered inspector accounts;
+// the `inspectors` table above is only the admin-curated directory.
 export const mapProfile = (id: string, data: any): Profile => ({
   id,
   role: data.role ?? "officer",
@@ -161,23 +162,21 @@ export const mapProfile = (id: string, data: any): Profile => ({
 // ─── Writes ─────────────────────────────────────────────────────────────────
 
 // [REF: ESTABLISHMENT_WRITE]
-// merge: true — establishments carry fields (qr_code_id, coordinates, personnel
-// counts) that not every client sets on every write; a plain setDoc would blank
-// out whatever this payload omits.
-//
-// `id` is also stored as a field on the document, not just as the document key,
-// because that is the shape the Flutter client reads.
+// upsert — PostgREST's ON CONFLICT UPDATE touches only the columns present in
+// the payload, which is exactly the old setDoc(..., {merge: true}) contract:
+// establishments carry fields (qr_code_id, coordinates, personnel counts) that
+// not every client sets on every write, and a full-row write would blank out
+// whatever this payload omits.
 export async function saveEstablishment(
   id: string | null,
   payload: Partial<Establishment>,
 ): Promise<string> {
-  const docId = id ?? crypto.randomUUID();
-  await setDoc(
-    doc(firebaseDb, COLLECTIONS.establishments, docId),
-    { ...payload, id: docId },
-    { merge: true },
-  );
-  return docId;
+  const rowId = id ?? crypto.randomUUID();
+  const { error } = await supabase
+    .from(COLLECTIONS.establishments)
+    .upsert({ ...payload, id: rowId });
+  if (error) throw new Error(error.message);
+  return rowId;
 }
 
 // [REF: INSPECTOR_WRITE]
@@ -185,62 +184,58 @@ export async function saveInspector(
   id: string | null,
   input: Omit<Inspector, "id" | "updated_at">,
 ): Promise<string> {
-  const docId = id ?? crypto.randomUUID();
-  await setDoc(
-    doc(firebaseDb, COLLECTIONS.inspectors, docId),
-    {
-      id: docId,
-      name: input.name,
-      inspector_id: input.inspectorId,
-      email: input.email,
-      phone: input.phone,
-      status: input.status,
-      performance: input.performance,
-      total_inspections: input.totalInspections,
-      completed_today: input.completedToday,
-      updated_at: new Date().toISOString(),
-    },
-    { merge: true },
-  );
-  return docId;
+  const rowId = id ?? crypto.randomUUID();
+  const { error } = await supabase.from(COLLECTIONS.inspectors).upsert({
+    id: rowId,
+    name: input.name,
+    inspector_id: input.inspectorId,
+    email: input.email,
+    phone: input.phone,
+    status: input.status,
+    performance: input.performance,
+    total_inspections: input.totalInspections,
+    completed_today: input.completedToday,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return rowId;
 }
 
 export async function deleteInspector(id: string): Promise<void> {
-  await deleteDoc(doc(firebaseDb, COLLECTIONS.inspectors, id));
+  const { error } = await supabase
+    .from(COLLECTIONS.inspectors)
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Reads ──────────────────────────────────────────────────────────────────
 
 // [REF: INSPECTION_DETAILS_FETCH_WEB]
-// Fetches one inspection log fresh from Firestore, mirroring the mobile
-// client's fetchInspectionDetails: per-item answers live in the `results`
-// array on the document, but logs written before that convention kept them in
-// an `inspection_results` sub-collection, so fall back to reading that when
-// the array is absent.
+// Fetches one inspection log fresh, mirroring the mobile client's
+// fetchInspectionDetails. Per-item answers live in the `results` jsonb array
+// on the row. The Firestore-era fallback to the legacy inspection_results
+// sub-collection is gone: the migration folded any sub-collection answers into
+// `results` (and the final export showed zero sub-collection docs anyway).
 export async function fetchInspectionDetails(logId: string): Promise<InspectionLog> {
-  const snap = await getDoc(doc(firebaseDb, COLLECTIONS.inspectionLogs, logId));
-  if (!snap.exists()) {
-    throw new Error("Inspection record not found.");
-  }
-
-  const log = mapInspectionLog(snap.id, snap.data());
-  if (log.results && log.results.length > 0) return log;
-
-  const legacy = await getDocs(
-    collection(firebaseDb, COLLECTIONS.inspectionLogs, logId, "inspection_results"),
-  );
-  return { ...log, results: legacy.docs.map((d) => d.data()) };
+  const { data, error } = await supabase
+    .from(COLLECTIONS.inspectionLogs)
+    .select("*")
+    .eq("id", logId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Inspection record not found.");
+  return mapInspectionLog(data.id, data);
 }
 
 export async function saveInspectionLog(
   id: string | null,
   payload: Partial<InspectionLog>,
 ): Promise<string> {
-  const docId = id ?? crypto.randomUUID();
-  await setDoc(
-    doc(firebaseDb, COLLECTIONS.inspectionLogs, docId),
-    { ...payload, id: docId },
-    { merge: true },
-  );
-  return docId;
+  const rowId = id ?? crypto.randomUUID();
+  const { error } = await supabase
+    .from(COLLECTIONS.inspectionLogs)
+    .upsert({ ...payload, id: rowId });
+  if (error) throw new Error(error.message);
+  return rowId;
 }

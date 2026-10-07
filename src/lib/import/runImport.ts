@@ -1,6 +1,6 @@
 // [REF: MASTERLIST_IMPORT_WRITES]
 //
-// Executes the decisions made by the match cascade, in chunked write batches.
+// Executes the decisions made by the match cascade, in chunked upsert groups.
 //
 // THE RULE THIS FILE IS BUILT AROUND: the importer has no write path to
 // inspection data. Nothing here imports from, reads, or writes
@@ -11,14 +11,22 @@
 // treats as historical reference only.
 //
 // Second rule, learned from a past bug in this app: establishment writes are
-// ALWAYS setDoc(..., { merge: true }) with only the fields the spreadsheet
-// actually filled in. A blank Excel cell must never erase a value we already
-// have, and a merge write can never blank out fields the spreadsheet doesn't
-// know about (qr_code_id, coordinates, sanitary_permit_no).
+// ALWAYS upserts carrying only the fields the spreadsheet actually filled in
+// (PostgREST's ON CONFLICT UPDATE touches only the payload's columns — the
+// same contract setDoc(merge:true) gave us). A blank Excel cell must never
+// erase a value we already have, and a partial upsert can never blank out
+// fields the spreadsheet doesn't know about (qr_code_id, coordinates,
+// sanitary_permit_no).
+//
+// Atomicity note for the Supabase era: Firestore batches were atomic per
+// chunk; the sequential upserts below are not. That is acceptable by this
+// file's own design — every write converges on a stable id, so re-running
+// the same file confirms finished rows instead of duplicating them, and the
+// batch record's counters are written AFTER the chunk's rows, so they only
+// ever under-count committed work, never invent it.
 
-import { collection, doc, getDocs, setDoc, writeBatch } from "firebase/firestore";
-import { firebaseDb } from "@/lib/firebase";
-import { COLLECTIONS, PERMITS_SUBCOLLECTION } from "@/lib/firestore";
+import { supabase, fetchAllRows } from "@/lib/supabase";
+import { COLLECTIONS, PERMITS_TABLE } from "@/lib/firestore";
 import type { Establishment, ReviewQueueItem, UploadBatch } from "@/lib/models";
 import type { MasterlistRow } from "./parseWorkbook";
 import type { ImportGroup, MatchDecision } from "./matchRows";
@@ -34,15 +42,41 @@ export interface ImportResult {
   missing: Establishment[];
 }
 
-// Decisions per Firestore batch. Each decision writes at most 3 documents
-// (establishment + permit + batch progress), and a batch holds 500 ops, so
-// 150 leaves comfortable headroom.
+// Decisions per round of upserts. Each decision writes at most 3 rows
+// (establishment + permit + batch progress); 150 keeps each request body
+// comfortably small.
 const DECISIONS_PER_CHUNK = 150;
 
 // NOTE: there is deliberately NO category handling anywhere in this file.
 // Categories are assigned at INSPECTION time, from the checklist the
 // inspector scores against — the masterlist's own classifier is its
 // "Line/Kind of Business" column, which imports as a plain field.
+
+// PostgREST requires every object in one bulk insert to carry the SAME keys,
+// and establishmentFields() deliberately includes only what the spreadsheet
+// filled in — so payload shapes vary row to row. Group by key signature and
+// issue one upsert per group; in practice a sheet produces only a handful of
+// signatures, so a 150-decision chunk still lands in a few requests.
+async function upsertGrouped(
+  table: string,
+  rows: Record<string, unknown>[],
+  onConflict?: string,
+): Promise<void> {
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const row of rows) {
+    const signature = Object.keys(row).sort().join(",");
+    const group = groups.get(signature);
+    if (group) group.push(row);
+    else groups.set(signature, [row]);
+  }
+  for (const group of groups.values()) {
+    const query = supabase.from(table);
+    const { error } = onConflict
+      ? await query.upsert(group, { onConflict })
+      : await query.upsert(group);
+    if (error) throw new Error(`${table}: ${error.message}`);
+  }
+}
 
 export async function executeImport(opts: {
   decisions: MatchDecision[];
@@ -71,26 +105,28 @@ export async function executeImport(opts: {
   };
 
   // Review items use DETERMINISTIC ids (a hash of what identifies the row),
-  // so re-running a file converges on the same documents. Items that already
+  // so re-running a file converges on the same rows. Items that already
   // exist are not rewritten at all: a pending one needs no second copy, and
   // one an admin already resolved must not be resurrected to "pending".
-  const existingReviewIds = new Set(
-    (await getDocs(collection(firebaseDb, COLLECTIONS.reviewQueue))).docs.map((d) => d.id),
+  const existingReviewIds = new Set<string>(
+    (await fetchAllRows(COLLECTIONS.reviewQueue)).map((r) => r.id as string),
   );
 
-  const batchRef = doc(firebaseDb, COLLECTIONS.uploadBatches, batchId);
-  await setDoc(batchRef, {
-    id: batchId,
-    file_name: opts.fileName,
-    group,
-    uploaded_by: opts.uploadedBy,
-    status: "running",
-    started_at: now(),
-    finished_at: null,
-    error: null,
-    counters,
-    missing_establishment_ids: [],
-  });
+  const { error: batchCreateError } = await supabase
+    .from(COLLECTIONS.uploadBatches)
+    .insert({
+      id: batchId,
+      file_name: opts.fileName,
+      group,
+      uploaded_by: opts.uploadedBy,
+      status: "running",
+      started_at: now(),
+      finished_at: null,
+      error: null,
+      counters,
+      missing_establishment_ids: [],
+    });
+  if (batchCreateError) throw new Error(batchCreateError.message);
 
   // Ids this run touched (matched or created) — the complement, within the
   // file's scope, is the missing-from-file list.
@@ -99,7 +135,9 @@ export async function executeImport(opts: {
   try {
     for (let start = 0; start < decisions.length; start += DECISIONS_PER_CHUNK) {
       const chunk = decisions.slice(start, start + DECISIONS_PER_CHUNK);
-      const batch = writeBatch(firebaseDb);
+      const establishmentRows: Record<string, unknown>[] = [];
+      const permitRows: Record<string, unknown>[] = [];
+      const reviewRows: Record<string, unknown>[] = [];
 
       for (const decision of chunk) {
         switch (decision.kind) {
@@ -107,12 +145,11 @@ export async function executeImport(opts: {
           case "renewal": {
             const est = decision.establishment;
             seenEstablishmentIds.add(est.id);
-            batch.set(
-              doc(firebaseDb, COLLECTIONS.establishments, est.id),
-              establishmentFields(decision.row, group, batchId),
-              { merge: true },
-            );
-            writePermitDoc(batch, est.id, decision.row, batchId);
+            establishmentRows.push({
+              id: est.id,
+              ...establishmentFields(decision.row, group, batchId),
+            });
+            pushPermitRow(permitRows, est.id, decision.row, batchId);
             if (decision.kind === "update-permit") counters.updated += 1;
             else counters.renewals += 1;
             break;
@@ -121,19 +158,14 @@ export async function executeImport(opts: {
           case "create": {
             const newId = decision.newId ?? crypto.randomUUID();
             seenEstablishmentIds.add(newId);
-            batch.set(
-              doc(firebaseDb, COLLECTIONS.establishments, newId),
-              {
-                // id stored as a field too — the shape the Flutter client reads.
-                id: newId,
-                business_name: decision.row.business_name ?? "",
-                created_at: now(),
-                source_batch_id: batchId,
-                ...establishmentFields(decision.row, group, batchId),
-              },
-              { merge: true },
-            );
-            writePermitDoc(batch, newId, decision.row, batchId);
+            establishmentRows.push({
+              id: newId,
+              business_name: decision.row.business_name ?? "",
+              created_at: now(),
+              source_batch_id: batchId,
+              ...establishmentFields(decision.row, group, batchId),
+            });
+            pushPermitRow(permitRows, newId, decision.row, batchId);
             counters.created += 1;
             // A new record whose name already exists at another address. The
             // rule says that is a different business, so nothing was blocked —
@@ -160,7 +192,7 @@ export async function executeImport(opts: {
             const reviewId = stableReviewId(group, opts.fileName, decision.row);
             if (existingReviewIds.has(reviewId)) break;
             existingReviewIds.add(reviewId);
-            batch.set(doc(firebaseDb, COLLECTIONS.reviewQueue, reviewId), {
+            reviewRows.push({
               id: reviewId,
               batch_id: batchId,
               group,
@@ -189,21 +221,32 @@ export async function executeImport(opts: {
         }
       }
 
-      // Progress rides in the same batch, so the audit record stays honest
-      // even if the tab dies mid-import: counters reflect committed work only.
-      batch.set(batchRef, { counters: { ...counters } }, { merge: true });
-      await batch.commit();
+      await upsertGrouped(COLLECTIONS.establishments, establishmentRows);
+      await upsertGrouped(PERMITS_TABLE, permitRows, "establishment_id,permit_no");
+      await upsertGrouped(COLLECTIONS.reviewQueue, reviewRows);
+
+      // Progress lands after the chunk's rows, so the audit record stays
+      // honest even if the tab dies mid-import: counters reflect committed
+      // work only (at worst one chunk behind, never ahead).
+      const { error: progressError } = await supabase
+        .from(COLLECTIONS.uploadBatches)
+        .update({ counters: { ...counters } })
+        .eq("id", batchId);
+      if (progressError) throw new Error(progressError.message);
       opts.onProgress?.(Math.min(start + chunk.length, decisions.length), decisions.length);
     }
   } catch (err) {
-    // A failed commit means that chunk did not land (batches are atomic).
-    // Record the failure and rethrow — re-running the same file is safe,
-    // because every write above is a merge keyed on stable ids.
-    await setDoc(
-      batchRef,
-      { status: "failed", finished_at: now(), error: err instanceof Error ? err.message : String(err) },
-      { merge: true },
-    );
+    // A failed request means that group of rows did not land. Record the
+    // failure and rethrow — re-running the same file is safe, because every
+    // write above is an upsert keyed on stable ids.
+    await supabase
+      .from(COLLECTIONS.uploadBatches)
+      .update({
+        status: "failed",
+        finished_at: now(),
+        error: err instanceof Error ? err.message : String(err),
+      })
+      .eq("id", batchId);
     throw err;
   }
 
@@ -219,18 +262,18 @@ export async function executeImport(opts: {
       est.group === group,
   );
 
-  await setDoc(
-    batchRef,
-    {
+  const { error: doneError } = await supabase
+    .from(COLLECTIONS.uploadBatches)
+    .update({
       status: "done",
       finished_at: now(),
       counters,
-      // Capped: a pathological id list must never push the batch document
-      // toward Firestore's 1 MiB limit. The UI recomputes the full list live.
+      // Capped: a pathological id list must never balloon the batch row.
+      // The UI recomputes the full list live.
       missing_establishment_ids: missing.slice(0, 2000).map((e) => e.id),
-    },
-    { merge: true },
-  );
+    })
+    .eq("id", batchId);
+  if (doneError) throw new Error(doneError.message);
 
   return { batchId, counters, missing };
 }
@@ -292,42 +335,39 @@ function establishmentFields(
   return fields;
 }
 
-/** One document per permit-year under the establishment. Keyed by the permit
- *  number itself, so re-importing the same file converges on the same
- *  documents instead of duplicating them. Rows with no valid permit number —
+/** One row per permit-year in establishment_permits, keyed on
+ *  (establishment_id, permit_no) so re-importing the same file converges on
+ *  the same rows instead of duplicating them. The parsed MasterlistRow plus
+ *  its raw original cells travel in the `data` jsonb column — the per-record
+ *  audit trail. (The Firestore-era '/'→'_' doc-id munging is gone: a permit
+ *  number is stored exactly as written.) Rows with no valid permit number —
  *  a blank cell, a placeholder like "N/A" or "pending", or a format
  *  PERMIT_NO_PATTERN does not recognise — update the establishment but leave
  *  no permit record, and nothing else persists their `raw` cells. */
-function writePermitDoc(
-  batch: ReturnType<typeof writeBatch>,
+function pushPermitRow(
+  permitRows: Record<string, unknown>[],
   establishmentId: string,
   row: MasterlistRow,
   batchId: string,
 ): void {
   if (!row.business_permit_no) return;
-  // '/' is the one character a Firestore doc id cannot contain.
-  const permitDocId = row.business_permit_no.replace(/\//g, "_");
-
-  batch.set(
-    doc(firebaseDb, COLLECTIONS.establishments, establishmentId, PERMITS_SUBCOLLECTION, permitDocId),
-    {
-      ...rowForStorage(row),
-      permit_no: row.business_permit_no,
-      source_batch_id: batchId,
-      imported_at: new Date().toISOString(),
-    },
-    { merge: true },
-  );
+  permitRows.push({
+    establishment_id: establishmentId,
+    permit_no: row.business_permit_no,
+    data: rowForStorage(row),
+    source_batch_id: batchId,
+    imported_at: new Date().toISOString(),
+  });
 }
 
-/** A MasterlistRow as stored in Firestore: every parsed field plus the
- *  original cells — this is the per-record audit trail. */
+/** A MasterlistRow as stored: every parsed field plus the original cells —
+ *  this is the per-record audit trail. */
 function rowForStorage(row: MasterlistRow): Record<string, unknown> {
   return { ...row };
 }
 
-/** A review item's document id, derived from what identifies the row, so
- *  re-importing the same file lands on the same document instead of queueing
+/** A review item's row id, derived from what identifies the row, so
+ *  re-importing the same file lands on the same row instead of queueing
  *  a duplicate.
  *
  *  The identity is the permit number when the row has a valid one; otherwise
@@ -369,7 +409,7 @@ function stableReviewId(group: string, fileName: string, row: MasterlistRow): st
  *
  *  merge  -> the row was the candidate business after all: apply it exactly
  *            as a renewal would have been applied (same field rules, same
- *            permit doc).
+ *            permit row).
  *  create -> genuinely a different business: new establishment + permit.
  *  dismiss-> bad row, import nothing.
  *
@@ -383,41 +423,54 @@ export async function applyReviewDecision(opts: {
 }): Promise<void> {
   const { item, action } = opts;
   const row = item.row as unknown as MasterlistRow;
-  const batch = writeBatch(firebaseDb);
-  const itemRef = doc(firebaseDb, COLLECTIONS.reviewQueue, item.id);
 
   if (action === "merge") {
     if (!opts.targetEstablishmentId) throw new Error("Merge needs a target establishment.");
-    batch.set(
-      doc(firebaseDb, COLLECTIONS.establishments, opts.targetEstablishmentId),
-      establishmentFields(row, item.group, item.batch_id),
-      { merge: true },
-    );
-    writePermitDoc(batch, opts.targetEstablishmentId, row, item.batch_id);
+    const { error } = await supabase.from(COLLECTIONS.establishments).upsert({
+      id: opts.targetEstablishmentId,
+      ...establishmentFields(row, item.group, item.batch_id),
+    });
+    if (error) throw new Error(error.message);
+    await upsertPermit(opts.targetEstablishmentId, row, item.batch_id);
   } else if (action === "create") {
     const newId = crypto.randomUUID();
-    batch.set(
-      doc(firebaseDb, COLLECTIONS.establishments, newId),
-      {
-        id: newId,
-        business_name: row.business_name ?? "",
-        created_at: new Date().toISOString(),
-        source_batch_id: item.batch_id,
-        ...establishmentFields(row, item.group, item.batch_id),
-      },
-      { merge: true },
-    );
-    writePermitDoc(batch, newId, row, item.batch_id);
+    const { error } = await supabase.from(COLLECTIONS.establishments).upsert({
+      id: newId,
+      business_name: row.business_name ?? "",
+      created_at: new Date().toISOString(),
+      source_batch_id: item.batch_id,
+      ...establishmentFields(row, item.group, item.batch_id),
+    });
+    if (error) throw new Error(error.message);
+    await upsertPermit(newId, row, item.batch_id);
   }
 
-  batch.set(
-    itemRef,
-    {
+  const { error: stampError } = await supabase
+    .from(COLLECTIONS.reviewQueue)
+    .update({
       status: action === "merge" ? "merged" : action === "create" ? "created" : "dismissed",
       decided_at: new Date().toISOString(),
       ...(action === "merge" ? { resolved_establishment_id: opts.targetEstablishmentId } : {}),
+    })
+    .eq("id", item.id);
+  if (stampError) throw new Error(stampError.message);
+}
+
+async function upsertPermit(
+  establishmentId: string,
+  row: MasterlistRow,
+  batchId: string,
+): Promise<void> {
+  if (!row.business_permit_no) return;
+  const { error } = await supabase.from(PERMITS_TABLE).upsert(
+    {
+      establishment_id: establishmentId,
+      permit_no: row.business_permit_no,
+      data: rowForStorage(row),
+      source_batch_id: batchId,
+      imported_at: new Date().toISOString(),
     },
-    { merge: true },
+    { onConflict: "establishment_id,permit_no" },
   );
-  await batch.commit();
+  if (error) throw new Error(error.message);
 }

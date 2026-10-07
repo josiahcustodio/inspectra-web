@@ -21,22 +21,18 @@ npm run build   # production build into dist/
 npx tsc --noEmit  # typecheck — `vite build` does not do this for you
 ```
 
-`npm run dev` needs a `.env` in the project root supplying the Firebase web
-config. The same keys are set in the Render dashboard for deploys — see
-`render.yaml`:
+`npm run dev` needs a `.env` in the project root supplying the Supabase
+project config. The same keys are set in the Render dashboard for deploys —
+see `render.yaml`:
 
 ```
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
-VITE_FIREBASE_MEASUREMENT_ID=
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
 ```
 
 Vite bakes these into the bundle at build time, so they are public by design —
-Firestore rules, not secrecy, are what protect the data.
+Postgres row-level security (migration/sql/02_rls.sql in the parent folder),
+not secrecy, is what protects the data.
 
 ## Where things are
 

@@ -16,7 +16,7 @@ import { useAuth } from "@/lib/useAuth";
 
 // [REF: ROLE_REDIRECT]
 const RoleRedirect = () => {
-  const { role, session, emailVerified, isLoading, error, retryProfile } = useAuth();
+  const { role, session, emailVerified, needsMfa, isLoading, error, retryProfile } = useAuth();
 
   if (isLoading) {
     return (
@@ -27,6 +27,7 @@ const RoleRedirect = () => {
   }
 
   if (!session) return <Navigate to="/login" replace />;
+  if (needsMfa) return <Navigate to="/login" replace />;
   if (!emailVerified) return <Navigate to="/verify-email" replace />;
   if (role === 'admin') return <Navigate to="/admin/dashboard" replace />;
   if (role === 'officer') return <Navigate to="/officer/dashboard" replace />;

@@ -20,12 +20,11 @@
 // merge keyed on a stable id, so a re-run converges instead of duplicating.
 
 import { useMemo, useRef, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileSpreadsheet, Upload } from "lucide-react";
-import { firebaseDb } from "@/lib/firebase";
+import { fetchAllRows } from "@/lib/supabase";
 import { COLLECTIONS, mapEstablishment, mapReviewQueueItem } from "@/lib/firestore";
 import { useCollection } from "@/lib/useCollection";
 import { useAuth } from "@/lib/useAuth";
@@ -84,9 +83,10 @@ export function MasterlistImport() {
     setPhase({ step: "running", done: 0, total: totalRows });
 
     try {
-      // One establishments fetch; the whole cascade then runs in memory.
-      const snapshot = await getDocs(collection(firebaseDb, COLLECTIONS.establishments));
-      const existing = snapshot.docs.map((d) => mapEstablishment(d.id, d.data()));
+      // One establishments fetch (paged past the 1000-row PostgREST cap);
+      // the whole cascade then runs in memory.
+      const rows = await fetchAllRows(COLLECTIONS.establishments);
+      const existing = rows.map((r) => mapEstablishment(r.id, r));
       const indexes = buildMatchIndexes(existing);
 
       const permitNosSeen = new Map<string, number>();
@@ -120,7 +120,7 @@ export function MasterlistImport() {
         decisions,
         group,
         fileName,
-        uploadedBy: user.uid,
+        uploadedBy: user.id,
         existing,
         skippedRows,
         onProgress: (done, total) => setPhase({ step: "running", done, total }),
@@ -131,8 +131,8 @@ export function MasterlistImport() {
       setPhase({
         step: "failed",
         message:
-          err instanceof Error && err.message.includes("permission")
-            ? "Firestore refused the import writes. The masterlist security rules may not be deployed yet — ask whoever manages firestore.rules."
+          err instanceof Error && /permission|row-level security/i.test(err.message)
+            ? "The database refused the import writes. The masterlist RLS policies may not be applied yet — ask whoever manages migration/sql/02_rls.sql."
             : `Import stopped: ${err instanceof Error ? err.message : String(err)}. Re-uploading the same file is safe — finished rows are simply confirmed again.`,
       });
     }

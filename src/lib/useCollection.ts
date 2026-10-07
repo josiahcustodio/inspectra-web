@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { firebaseDb } from "./firebase";
+import { supabase, fetchAllRows } from "./supabase";
 import { useAuth } from "./useAuth";
 
 export interface CollectionState<T> {
-  /** `undefined` until the first snapshot arrives — lets callers tell "still loading" from "genuinely empty". */
+  /** `undefined` until the first read lands — lets callers tell "still loading" from "genuinely empty". */
   data: T[] | undefined;
   isLoading: boolean;
   error: Error | null;
@@ -12,16 +11,19 @@ export interface CollectionState<T> {
 
 // [REF: LIVE_COLLECTION]
 //
-// Subscribes to a Firestore collection and re-renders on every server change.
-// This replaces the old Dexie mirror + 15-second polling sync: updates now
-// arrive when they happen, from any client, with no local copy to reconcile.
+// Reads a whole table and re-reads it on every server change, via Supabase
+// Realtime (postgres_changes). Refetch-on-event rather than patching rows in
+// place: the payload of a single event is not the whole truth (RLS-filtered,
+// ordering-free), and a full re-read of these tables is cheap at this app's
+// scale. Events respect RLS, so a user only hears about rows they could read
+// anyway.
 //
 // The subscription is torn down on unmount and whenever the signed-in user
-// changes, so a signed-out session never holds an open listener.
+// changes, so a signed-out session never holds an open channel.
 //
 // `enabled` opts out of subscribing at all. It defaults to true, so a screen
-// that always needs its collection reads exactly as before; pass false to keep
-// the listener closed until the UI that depends on it actually exists — a modal
+// that always needs its table reads exactly as before; pass false to keep the
+// channel closed until the UI that depends on it actually exists — a modal
 // that has never been opened should not be holding a live query open.
 export function useCollection<T>(
   path: string,
@@ -29,6 +31,12 @@ export function useCollection<T>(
   enabled: boolean = true,
 ): CollectionState<T> {
   const { user } = useAuth();
+  // The subscription must re-open when a DIFFERENT user signs in, but not
+  // when the same user's token refreshes (useAuth replaces the user object
+  // on every ~hourly TOKEN_REFRESHED) — keying the effect on the id, not the
+  // object, avoids a teardown/resubscribe race and a full re-download each
+  // refresh.
+  const userId = user?.id ?? null;
   const [state, setState] = useState<CollectionState<T>>({
     data: undefined,
     isLoading: true,
@@ -42,53 +50,62 @@ export function useCollection<T>(
 
   useEffect(() => {
     // Left as `data: undefined` rather than `[]`: nothing has been read, so
-    // callers must not be able to mistake this for a genuinely empty collection.
-    if (!enabled || !user) {
+    // callers must not be able to mistake this for a genuinely empty table.
+    if (!enabled || !userId) {
       setState({ data: undefined, isLoading: false, error: null });
       return;
     }
 
     let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
+    // Change events can arrive in bursts (an import touches thousands of
+    // rows); coalesce them into one refetch per tick instead of one each.
+    let refetchTimer: ReturnType<typeof setTimeout> | undefined;
 
     setState({ data: undefined, isLoading: true, error: null });
 
-    // Firestore's internal auth-credential listener can lag `auth.currentUser`
-    // right after a fresh sign-in: the user object is already set, but a
-    // listener attached in that window comes back permission-denied even though
-    // the security rules allow it. Forcing a token fetch is a real round-trip
-    // that only resolves once that credential state has settled.
-    user
-      .getIdToken()
-      .then(() => {
+    const refetch = async () => {
+      try {
+        const rows = await fetchAllRows(path);
         if (cancelled) return;
-        unsubscribe = onSnapshot(
-          collection(firebaseDb, path),
-          (snapshot) => {
-            if (cancelled) return;
-            setState({
-              data: snapshot.docs.map((d) => mapRef.current(d.id, d.data())),
-              isLoading: false,
-              error: null,
-            });
-          },
-          (error) => {
-            if (cancelled) return;
-            console.error(`Live query for "${path}" failed:`, error);
-            setState({ data: [], isLoading: false, error });
-          },
-        );
-      })
-      .catch((error: Error) => {
+        setState({
+          data: rows.map((r) => mapRef.current(r.id, r)),
+          isLoading: false,
+          error: null,
+        });
+      } catch (error: any) {
         if (cancelled) return;
+        console.error(`Live query for "${path}" failed:`, error);
         setState({ data: [], isLoading: false, error });
-      });
+      }
+    };
+
+    const scheduleRefetch = () => {
+      if (refetchTimer) clearTimeout(refetchTimer);
+      refetchTimer = setTimeout(refetch, 300);
+    };
+
+    refetch();
+
+    // Channel topic must be unique PER HOOK INSTANCE, not per table: two
+    // hooks sharing a topic silently collide in realtime-js — the second
+    // subscribe() no-ops on the already-joined channel and either cleanup
+    // removeChannel()s it out from under the other hook, which then stops
+    // live-updating with no error.
+    const channel = supabase
+      .channel(`table:${path}:${crypto.randomUUID()}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: path },
+        scheduleRefetch,
+      )
+      .subscribe();
 
     return () => {
       cancelled = true;
-      unsubscribe?.();
+      if (refetchTimer) clearTimeout(refetchTimer);
+      supabase.removeChannel(channel);
     };
-  }, [path, user, enabled]);
+  }, [path, userId, enabled]);
 
   return state;
 }

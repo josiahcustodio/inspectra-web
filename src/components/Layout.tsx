@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { useConnection } from "@/lib/ConnectionProvider";
 import { useAuth } from "@/lib/useAuth";
 import {
@@ -63,7 +62,7 @@ export function Layout() {
     .map(item => ({ ...item, path: `${rolePrefix}/${item.path}` }));
 
   const handleSignOut = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
     navigate("/login", { replace: true });
   };
 

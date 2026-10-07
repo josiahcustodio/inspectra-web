@@ -13,17 +13,7 @@ services:
     # Values are entered once in the Render dashboard (sync: false), then
     # baked into the JS bundle at build time by Vite.
     envVars:
-      - key: VITE_FIREBASE_API_KEY
+      - key: VITE_SUPABASE_URL
         sync: false
-      - key: VITE_FIREBASE_APP_ID
-        sync: false
-      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
-        sync: false
-      - key: VITE_FIREBASE_PROJECT_ID
-        sync: false
-      - key: VITE_FIREBASE_AUTH_DOMAIN
-        sync: false
-      - key: VITE_FIREBASE_STORAGE_BUCKET
-        sync: false
-      - key: VITE_FIREBASE_MEASUREMENT_ID
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
         sync: false

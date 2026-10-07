@@ -5,35 +5,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { ShieldCheck, ShieldQuestion } from "lucide-react";
-import {
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
-  getMultiFactorResolver,
-  TotpMultiFactorGenerator,
-  type MultiFactorResolver,
-} from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/useAuth";
 
 export function Login() {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, needsMfa } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
   const [mfaCode, setMfaCode] = useState("");
 
-  // A session that is already live means this page was reached by typing /login
-  // while signed in. Redirect, and return null on the way out so the form never
-  // flashes up for the frame before the navigation commits.
+  // A fully-signed-in session means this page was reached by typing /login
+  // while signed in. Redirect, and return null on the way out so the form
+  // never flashes. A session that still owes its second factor stays here —
+  // that is the OTP pane below (Supabase signs in at AAL1 first; the account
+  // data stays server-blocked until the code upgrades the session to AAL2).
   useEffect(() => {
-    if (session) navigate("/", { replace: true });
-  }, [session, navigate]);
+    if (session && !needsMfa) navigate("/", { replace: true });
+  }, [session, needsMfa, navigate]);
 
-  if (session) return null;
+  if (session && !needsMfa) return null;
 
   // [REF: WEB_SIGNIN_EMAIL]
   const handleEmailLogin = async (e: React.FormEvent) => {
@@ -42,16 +35,15 @@ export function Login() {
 
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      // If this account has a TOTP factor, useAuth flips needsMfa and this
+      // page re-renders into the OTP pane; otherwise the guard redirects home.
       toast.success("Successfully logged in");
-      // Navigation is handled automatically by the AuthGuard since useAuth updates
-      navigate("/", { replace: true });
     } catch (err: any) {
-      // Firebase reports "this account has a second factor" by throwing, not by
-      // returning — so the MFA challenge is raised out of the catch block. The
-      // error carries the resolver that the challenge needs; it is not a failure.
-      if (err.code === "auth/multi-factor-auth-required") {
-        setMfaResolver(getMultiFactorResolver(auth, err));
+      if (/email not confirmed/i.test(err.message ?? "")) {
+        // Parked account: registered but never clicked the verification link.
+        navigate("/verify-email", { replace: true, state: { email } });
       } else {
         toast.error(err.message || "Failed to log in");
       }
@@ -63,40 +55,49 @@ export function Login() {
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      // No setIsLoading(false) on this path, and no navigate() either: the auth
-      // state change re-renders through the guard and unmounts this page, so
-      // clearing the flag would only be writing to a component on its way out.
-      // The spinner therefore stays up until the redirect lands, which is what
-      // we want. Failure does clear it — see the catch below.
+      // Full-page redirect (Supabase has no popup flow): the browser leaves
+      // for Google and comes back signed in, so nothing after this call runs
+      // on success — the spinner stays up until the page unloads, which is
+      // what we want. Failure does clear it — see the catch below.
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) throw error;
     } catch (err: any) {
-      if (err.code === "auth/multi-factor-auth-required") {
-        setMfaResolver(getMultiFactorResolver(auth, err));
-      } else {
-        toast.error(err.message || "Failed to log in with Google");
-      }
+      toast.error(err.message || "Failed to log in with Google");
       setIsLoading(false);
     }
   };
 
   // [REF: WEB_MFA_CHALLENGE]
+  // The session already exists (AAL1); verifying the TOTP code upgrades it to
+  // AAL2, which is what the restrictive RLS policies are waiting for.
   const handleMfaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!mfaResolver || mfaCode.length !== 6) return;
-
-    const hint = mfaResolver.hints.find((h) => h.factorId === TotpMultiFactorGenerator.FACTOR_ID);
-    if (!hint) {
-      toast.error("No supported second factor found for this account");
-      return;
-    }
+    if (mfaCode.length !== 6) return;
 
     setIsLoading(true);
     try {
-      const assertion = TotpMultiFactorGenerator.assertionForSignIn(hint.uid, mfaCode);
-      await mfaResolver.resolveSignIn(assertion);
+      const { data: factorData, error: listError } = await supabase.auth.mfa.listFactors();
+      if (listError) throw listError;
+      const factor = factorData.totp[0];
+      if (!factor) {
+        toast.error("No supported second factor found for this account");
+        return;
+      }
+      const { data: challenge, error: challengeError } =
+        await supabase.auth.mfa.challenge({ factorId: factor.id });
+      if (challengeError) throw challengeError;
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: factor.id,
+        challengeId: challenge.id,
+        code: mfaCode,
+      });
+      if (verifyError) throw verifyError;
       toast.success("Successfully logged in");
-      navigate("/", { replace: true });
+      // The verify call refreshes the session to AAL2; useAuth hears the auth
+      // state change, clears needsMfa, and the effect above redirects home.
     } catch (err: any) {
       toast.error(err.message || "Invalid code, try again");
       setMfaCode("");
@@ -150,7 +151,7 @@ export function Login() {
         </div>
 
         <div className="w-full max-w-sm space-y-8">
-          {mfaResolver ? (
+          {session && needsMfa ? (
             <>
               <div className="space-y-2 text-center lg:text-left">
                 <div className="mx-auto lg:mx-0 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
@@ -182,8 +183,10 @@ export function Login() {
                 </Button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMfaResolver(null);
+                  onClick={async () => {
+                    // The half-authenticated AAL1 session must not linger —
+                    // abandoning the challenge means signing out of it.
+                    await supabase.auth.signOut();
                     setMfaCode("");
                   }}
                   className="w-full text-center text-sm text-slate-500 hover:text-slate-700 hover:underline"

@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShieldCheck } from "lucide-react";
-import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/useAuth";
 
@@ -42,14 +41,19 @@ export function Signup() {
 
     setIsLoading(true);
     try {
-      // createUserWithEmailAndPassword signs the new account in immediately, so
-      // by the time this resolves there is a session — just an unverified one.
-      // /verify-email is where that state is parked; the route map sends anyone
-      // unverified back there anyway, so this navigate only saves a round trip.
-      const credential = await createUserWithEmailAndPassword(auth, email, password);
-      await sendEmailVerification(credential.user);
+      // Unlike Firebase, Supabase does NOT create a session here while email
+      // confirmation is required: the account exists but stays parked until
+      // the link in the verification email is clicked (the link itself signs
+      // the user in). /verify-email renders off the email we pass in state,
+      // since there is no signed-in user to read it from yet.
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      if (error) throw error;
       toast.success("Account created — check your inbox to verify your email");
-      navigate("/verify-email", { replace: true });
+      navigate("/verify-email", { replace: true, state: { email } });
     } catch (err: any) {
       toast.error(err.message || "Failed to create account");
     } finally {
