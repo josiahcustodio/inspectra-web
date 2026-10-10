@@ -17,3 +17,51 @@ services:
         sync: false
       - key: VITE_SUPABASE_PUBLISHABLE_KEY
         sync: false
+    # Security headers — added 2026-10-10 to resolve the ZAP active-scan
+    # findings "CSP Header Not Set" and "Missing Anti-clickjacking Header".
+    # Full rationale and the paste-ready dashboard values live in
+    # docs/SECURITY_HEADERS.md.
+    #
+    # NOTE: the live service was created manually in the Render dashboard,
+    # so this file is NOT applied automatically. These headers must also be
+    # entered under inspectra-web -> Redirects/Headers in the dashboard;
+    # this block exists so the repo documents the intended values.
+    headers:
+      # Allow-list of where the browser may load content from. Each source
+      # here maps to something the app actually uses:
+      #   script-src 'self'            — only our Vite bundle; index.html has
+      #                                  no inline scripts, so no 'unsafe-inline'
+      #   style-src  'unsafe-inline'   — Radix/Leaflet/Recharts inject inline
+      #                                  styles; fonts.googleapis.com serves
+      #                                  the Inter font stylesheet
+      #   font-src   fonts.gstatic.com — Inter .woff2 files
+      #   img-src    cartocdn          — Leaflet basemap tiles (GISMap.tsx)
+      #              supabase.co       — inspection photo evidence (storage)
+      #              data: blob:       — TOTP QR code, generated images
+      #   connect-src supabase.co      — REST/auth API; wss: for realtime
+      #   frame-ancestors 'none'       — nobody may iframe this app
+      - path: /*
+        name: Content-Security-Policy
+        value: >-
+          default-src 'self';
+          script-src 'self';
+          style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+          font-src https://fonts.gstatic.com;
+          img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://fwtgdgeiffnvqyrobixc.supabase.co;
+          connect-src 'self' https://fwtgdgeiffnvqyrobixc.supabase.co wss://fwtgdgeiffnvqyrobixc.supabase.co;
+          frame-ancestors 'none';
+          object-src 'none';
+          base-uri 'self';
+          form-action 'self'
+      # Legacy equivalent of frame-ancestors, for older browsers/scanners.
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      # Don't leak full URLs (which include route paths) to third parties.
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      # The web app never uses camera/mic/geolocation — disable them outright.
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=()
