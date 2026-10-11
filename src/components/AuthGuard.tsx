@@ -30,7 +30,6 @@ export function AuthGuard({ allowedRoles }: AuthGuardProps) {
   }
 
   // Email/password accounts must verify before they can use the app.
-  // Google sign-in is pre-verified, so this only ever blocks email signups.
   if (!emailVerified) {
     return <Navigate to="/verify-email" replace />;
   }

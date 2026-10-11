@@ -21,7 +21,7 @@ src/
   vite-env.d.ts         Types for the VITE_SUPABASE_* env vars.
 
   pages/                One file per route. Each owns its own data subscriptions.
-    Login.tsx           Email + Google sign-in, and the TOTP challenge when an account has 2FA.
+    Login.tsx           Email sign-in, and the TOTP challenge when an account has 2FA.
     Signup.tsx          Account creation, then straight to /verify-email.
     VerifyEmail.tsx     Holding page for a signed-in but unverified account.
     Dashboard.tsx       KPI tiles and the two compliance charts.

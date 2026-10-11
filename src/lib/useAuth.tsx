@@ -50,11 +50,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    // With Supabase the email-confirmation state lives on the user object;
-    // Google accounts arrive already confirmed. When confirmation is required
-    // (it is — see migration/apply_phase1.py), an email/password session can
-    // only exist once the address is verified, so this is true for virtually
-    // every live session; the guard pages keep working off it regardless.
+    // With Supabase the email-confirmation state lives on the user object.
+    // Confirmation is required (see migration/apply_phase1.py), so a session
+    // can only exist once the address is verified — this is true for every
+    // live session; the guard pages keep working off it regardless.
     const verified = (user: User) => user.email_confirmed_at != null;
 
     // Web MFA is optional (mobile is where it's compulsory), but once a user
