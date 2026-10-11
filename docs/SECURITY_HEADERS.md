@@ -1,7 +1,11 @@
 # Security Headers & ZAP Scan Mitigation
 
 **Date:** 2026-10-10 · **Source:** ZAP 2.17 active scan of https://inspectra-web.onrender.com
-(`inspectra-active-Report-.html`, generated Sat 10 Oct 2026)
+(`inspectra-active-Report-.html`, generated Sat 10 Oct 2026 — kept outside the
+repo, in the maintainer's local archive, because it embeds full request/response
+captures. Not to be confused with `2026-10-10-ZAP-Report-.pdf` in the parent
+folder: that is an earlier, differently-scoped baseline scan from the same day
+with different counts — 2 Medium / 7 Low.)
 
 Scan result: **0 High · 3 Medium · 5 Low · 6 Informational.**
 This document records how each finding was handled and exactly where the
@@ -20,7 +24,7 @@ row per header, path `/*` for all four:
 
 | Header | Value |
 |---|---|
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://fwtgdgeiffnvqyrobixc.supabase.co; connect-src 'self' https://fwtgdgeiffnvqyrobixc.supabase.co wss://fwtgdgeiffnvqyrobixc.supabase.co; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.basemaps.cartocdn.com https://fwtgdgeiffnvqyrobixc.supabase.co; connect-src 'self' https://fwtgdgeiffnvqyrobixc.supabase.co wss://fwtgdgeiffnvqyrobixc.supabase.co; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'` |
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
@@ -41,16 +45,28 @@ Every source in the policy maps to something the app verifiably loads
 | `script-src 'self'` | our Vite bundle only | `index.html` has **no** inline scripts, so no `'unsafe-inline'` — this is the directive that actually blunts XSS |
 | `style-src 'unsafe-inline'` | inline styles | Radix UI, Leaflet, Recharts inject style attributes at runtime |
 | `style-src fonts.googleapis.com` | Inter stylesheet | `src/styles/fonts.css` `@import` |
-| `font-src fonts.gstatic.com` | Inter `.woff2` | loaded by the Google Fonts stylesheet |
+| `font-src 'self' fonts.gstatic.com` | Inter `.woff2` | loaded by the Google Fonts stylesheet; `'self'` is headroom so self-hosting Inter later doesn't silently break |
 | `img-src *.basemaps.cartocdn.com` | map tiles | `src/pages/GISMap.tsx` Leaflet tile layer |
 | `img-src …supabase.co` | photo evidence | `InspectionChecklistView.tsx` renders `photo_evidence_url` from Supabase Storage |
-| `img-src data: blob:` | generated images | TOTP QR code in `Settings.tsx` (`qrDataUrl`) |
+| `img-src data:` | generated images | TOTP QR code in `Settings.tsx` (`QRCode.toDataURL`). Note: `blob:` is deliberately NOT allowed — nothing renders blob: images; the xlsx export's blob URL is a download `href`, which `img-src` does not govern |
 | `connect-src …supabase.co` + `wss:` | API traffic | supabase-js REST/auth/realtime |
 | `frame-ancestors 'none'` | — | nothing may iframe the app (fixes the clickjacking finding) |
 
 **If the app later loads from a new origin** (a CDN, a different storage
 bucket, Google avatar images, …), add that origin to the matching directive
 in **both** the dashboard and `render.yaml`, and note it in the table above.
+
+Two known couplings to keep in mind:
+
+- **The Supabase origin appears twice**: baked into the bundle from the
+  dashboard env var `VITE_SUPABASE_URL`, and hardcoded in this CSP. There is
+  no automatic consistency check. If the Supabase project URL ever changes,
+  update `img-src`/`connect-src` in the dashboard header AND `render.yaml`,
+  or every API call and photo load will be CSP-blocked.
+- **No `worker-src` is declared**, so it falls back to `default-src 'self'`,
+  which blocks `blob:` workers. supabase-js works fine today, but if realtime
+  is ever switched to worker mode (`realtime: {worker: true}` in
+  `src/lib/supabase.ts`), add `worker-src 'self' blob:` in both places first.
 
 ---
 
@@ -87,8 +103,12 @@ to a managed public API gateway:
   is by design — Supabase's REST API is meant to be called cross-origin with
   the publishable key; authorization is enforced by Row Level Security, not
   CORS. Verified in this report: every flagged Supabase instance was a CORS
-  **preflight (`OPTIONS`) with a 0-byte body** — no data was returned. RLS
-  anon-access probes passed 27/27 during the migration (`migration/rls_probes.py`).
+  **preflight (`OPTIONS`) with a 0-byte body** — no data was returned. The
+  migration's RLS probe suite passed 27/27 (`rls_probes.py`, kept in the
+  untracked `migration/` folder next to this repo); note most of those probes
+  exercise officer/admin role boundaries — only one directly tests anon
+  access, so the preflight evidence above is the primary basis for accepting
+  this finding.
 - **Cookie with SameSite=None / Loosely Scoped Cookie (Low/Info):** this is
   Cloudflare's `__cf_bm` bot-management cookie on Supabase's edge, not an
   application session cookie. Inspectra sessions are JWTs in localStorage,

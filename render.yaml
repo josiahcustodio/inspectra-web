@@ -1,6 +1,10 @@
 services:
   - type: web
-    name: inspectra-admin
+    # Must match the live service name. The service itself was created
+    # manually in the dashboard as "inspectra-web" — if this file is ever
+    # connected as a Blueprint, a mismatched name here would spawn a second
+    # service instead of adopting the live one.
+    name: inspectra-web
     runtime: static
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
@@ -34,20 +38,28 @@ services:
       #   style-src  'unsafe-inline'   — Radix/Leaflet/Recharts inject inline
       #                                  styles; fonts.googleapis.com serves
       #                                  the Inter font stylesheet
-      #   font-src   fonts.gstatic.com — Inter .woff2 files
+      #   font-src   'self'            — permits self-hosting Inter later
+      #              fonts.gstatic.com — Inter .woff2 files today
       #   img-src    cartocdn          — Leaflet basemap tiles (GISMap.tsx)
       #              supabase.co       — inspection photo evidence (storage)
-      #              data: blob:       — TOTP QR code, generated images
+      #              data:             — TOTP QR code (Settings.tsx data: URL)
       #   connect-src supabase.co      — REST/auth API; wss: for realtime
       #   frame-ancestors 'none'       — nobody may iframe this app
+      #
+      # COUPLING WARNING: the Supabase origin is hardcoded below, but the app
+      # reads it from VITE_SUPABASE_URL at build time. If that URL ever
+      # changes, update img-src/connect-src here AND in the dashboard header,
+      # or every API call and photo load will be blocked.
+      # If supabase-js realtime is ever switched to worker mode
+      # (realtime: {worker: true}), add: worker-src 'self' blob:
       - path: /*
         name: Content-Security-Policy
         value: >-
           default-src 'self';
           script-src 'self';
           style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-          font-src https://fonts.gstatic.com;
-          img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://fwtgdgeiffnvqyrobixc.supabase.co;
+          font-src 'self' https://fonts.gstatic.com;
+          img-src 'self' data: https://*.basemaps.cartocdn.com https://fwtgdgeiffnvqyrobixc.supabase.co;
           connect-src 'self' https://fwtgdgeiffnvqyrobixc.supabase.co wss://fwtgdgeiffnvqyrobixc.supabase.co;
           frame-ancestors 'none';
           object-src 'none';
