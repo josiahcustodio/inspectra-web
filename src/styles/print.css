@@ -1,0 +1,52 @@
+/* [REF: PRINT_ROOT]
+   Printing one element out of a React app, without a PDF library.
+
+   `visibility`, not `display: none`: the Sanitary Order renders inside a Radix
+   dialog, which is a portal several levels deep in the body. Hiding ancestors
+   with `display` would remove the order along with them, while `visibility`
+   leaves every box in layout and only stops it painting — so the deeply
+   nested subtree can be made visible again on its own.
+
+   Repositioning to the top-left is what stops the order printing on page 3:
+   its ancestors still occupy their on-screen offsets even while invisible. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  [data-print-root],
+  [data-print-root] * {
+    visibility: visible;
+  }
+
+  [data-print-root] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    /* Black on white: this is a government form, and the app's slate palette
+       prints as muddy grey on the office laser printer. */
+    color: #000;
+    background: #fff;
+  }
+
+  /* Controls that mean nothing on paper — the Print button itself above all,
+     which would otherwise appear in the printout. */
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* The dialog's own scroll container clips the order to the viewport height
+     on paper too, cutting off every defect past the first few. */
+  [data-print-root] * {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+}
