@@ -7,6 +7,7 @@ import {
   esc,
   EstablishmentRow,
   OrderRow,
+  parseSender,
   renderHtml,
   renderSubject,
 } from "./render.ts";
@@ -186,4 +187,23 @@ Deno.test("the notice keeps the statutes the paper form cites", () => {
   ) {
     assertStringIncludes(text, cite);
   }
+});
+
+// A wrong sender here is a Sanitary Order that never leaves Brevo, or one that
+// arrives from a nameless address.
+Deno.test("parseSender splits the configured From", () => {
+  assertEquals(parseSender("City Health Office <no-reply@batangascity.gov.ph>"), {
+    name: "City Health Office",
+    email: "no-reply@batangascity.gov.ph",
+  });
+  // Quoted display name, as some operators write it.
+  assertEquals(parseSender('"City Health Office" <no-reply@example.gov.ph>').name,
+    "City Health Office");
+  // Bare address: no display name, and the address must not keep the padding.
+  assertEquals(parseSender("  no-reply@example.gov.ph  "), {
+    name: "",
+    email: "no-reply@example.gov.ph",
+  });
+  // Nonsense is handed back for the caller's "@" check to refuse, not guessed at.
+  assertEquals(parseSender("City Health Office").email, "City Health Office");
 });

@@ -8,9 +8,12 @@ import { Inspectors } from "@/pages/Inspectors";
 import { Masterlist } from "@/pages/Masterlist";
 import { MasterlistImport } from "@/pages/MasterlistImport";
 import { Settings } from "@/pages/Settings";
+import { Access } from "@/pages/Access";
+import { AccountStatus } from "@/pages/AccountStatus";
 import { Login } from "@/pages/Login";
 import { Signup } from "@/pages/Signup";
 import { VerifyEmail } from "@/pages/VerifyEmail";
+import { ResetPassword } from "@/pages/ResetPassword";
 import { AuthGuard } from "@/components/AuthGuard";
 import { useAuth } from "@/lib/useAuth";
 
@@ -31,6 +34,14 @@ const RoleRedirect = () => {
   if (!emailVerified) return <Navigate to="/verify-email" replace />;
   if (role === 'admin') return <Navigate to="/admin/dashboard" replace />;
   if (role === 'officer') return <Navigate to="/officer/dashboard" replace />;
+  // [REF: ROLE_REDIRECT_NON_STAFF]
+  // The two roles with no portal. Before these branches existed, a session
+  // holding either one fell through to the spinner at the bottom of this
+  // function and stayed there — which is what every new sign-up would have
+  // done once handle_new_user() started writing 'pending'.
+  if (role === 'pending' || role === 'owner') {
+    return <Navigate to="/account" replace />;
+  }
 
   if (error) {
     return (
@@ -65,6 +76,18 @@ export const router = createBrowserRouter([
     path: "/verify-email",
     Component: VerifyEmail,
   },
+  {
+    path: "/reset-password",
+    Component: ResetPassword,
+  },
+  {
+    // Deliberately outside both AuthGuard branches: the roles that land here
+    // match neither, and guarding it would bounce them back to "/" in a loop.
+    // The page renders nothing sensitive — it reads only the session's own
+    // email and role.
+    path: "/account",
+    Component: AccountStatus,
+  },
 
   {
     path: "/",
@@ -89,6 +112,10 @@ export const router = createBrowserRouter([
               // give them a page whose every write fails.
               { path: "masterlist", Component: Masterlist },
               { path: "import", Component: MasterlistImport },
+              // Admin branch only. Writing profiles.role is admin-gated in RLS
+              // (profiles_update) and so is establishment_contacts, so an
+              // officer would get a page whose every write fails.
+              { path: "access", Component: Access },
               { path: "settings", Component: Settings },
             ],
           }

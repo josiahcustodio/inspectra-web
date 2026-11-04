@@ -17,7 +17,7 @@ import {
   mapInspectionLog,
 } from "@/lib/firestore";
 import type { Establishment, InspectionLog } from "@/lib/models";
-import { ratingColor, ratingLabel } from "@/lib/ratingScale";
+import { UNSCORED_LOG_LABEL, ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { barangayOfEstablishment } from "@/lib/barangayGeo";
 import {
   byNewestFirst,
@@ -369,7 +369,11 @@ function HistoryBody({ open, establishment, onRetry }: HistoryBodyProps) {
                           className="text-xs font-bold mt-1 pl-3.5"
                           style={{ color: ratingColor(row.score) }}
                         >
-                          {ratingLabel(row.score)}
+                          {/* Per-log, so an absent score reads as "Scheduled", not
+                              "Not yet inspected" — that one is reserved for an
+                              establishment with no inspections at all, which is
+                              exactly what this row disproves. */}
+                          {row.score == null ? UNSCORED_LOG_LABEL : ratingLabel(row.score)}
                         </p>
                         <p className="text-xs text-muted-foreground font-medium mt-0.5 pl-3.5 flex items-center gap-1.5">
                           <User className="w-3 h-3 flex-shrink-0" />
@@ -401,6 +405,9 @@ function HistoryBody({ open, establishment, onRetry }: HistoryBodyProps) {
                   isLoading={isDetailLoading}
                   error={detailError}
                   onRetry={() => setRetryToken((t) => t + 1)}
+                  // This modal is opened from an establishment row, so the
+                  // Sanitary Order can print its Name and Address lines.
+                  establishment={establishment}
                 />
               </div>
             </div>

@@ -51,6 +51,12 @@ export const RATING_BANDS: readonly RatingBandSpec[] = BAND_DEFINITIONS.map(b =>
 export const UNSCORED_LABEL = "Not yet inspected";
 export const UNSCORED_COLOR = "#94A3B8";
 
+// The same absent score, read per LOG instead of per establishment. Here
+// `UNSCORED_LABEL` would be a lie — the inspection exists, it just has no
+// rating yet — so anything listing individual logs uses this instead. One
+// spelling, shared with the Inspections list's status column.
+export const UNSCORED_LOG_LABEL = "Scheduled";
+
 /** The spec for one band, by name. */
 export function bandSpec(band: RatingBand): RatingBandSpec {
   // The table is exhaustive over RatingBand, so this always resolves.

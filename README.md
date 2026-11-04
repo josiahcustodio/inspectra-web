@@ -8,9 +8,12 @@ Inspectors collect inspections in the field with the Flutter app
 KPIs, the establishment register, submitted inspection logs, the inspector
 directory, and a barangay-level GIS map of compliance.
 
-React 18 · Vite 6 · TypeScript · Tailwind 4 · Firebase (Auth + Firestore).
-No backend of our own: the browser talks to Firestore directly, and access is
-enforced by `firestore.rules` in the mobile repo.
+React 18 · Vite 6 · TypeScript · Tailwind 4 · Supabase (Auth + Postgres).
+No server of our own to run: the browser reads and writes Postgres directly
+through PostgREST, and who may touch what is decided by row-level-security
+policies in the database, never by this client. The three jobs a browser must
+not do are Supabase Edge Functions in `supabase/functions/` — owner
+provisioning, Sanitary Order email delivery, and the AI barangay summary.
 
 ## Running it
 

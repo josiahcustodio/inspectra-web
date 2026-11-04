@@ -63,9 +63,10 @@ function isDirectoryEntry(inspector: Inspector): boolean {
 //
 // The list shown here is a merge of every place a real inspector can exist:
 //  1. the admin-curated `inspectors` directory,
-//  2. registered mobile accounts in `profiles` (readable by admins only — a
-//     permission error on that source just means it's unavailable, not that
-//     the page failed), and
+//  2. officer accounts in `profiles` — only that role, since the table also
+//     holds admins, unactivated 'pending' signups and establishment owners
+//     (readable by admins only — a permission error on that source just means
+//     it's unavailable, not that the page failed), and
 //  3. names found on submitted `inspection_logs`.
 // Inspection counts are always derived live from the logs, because no client
 // keeps the directory's counter fields up to date.
@@ -112,14 +113,24 @@ export function Inspectors() {
       const s = claimStats(d.name, d.email);
       merged.push({
         ...d,
-        totalInspections: s ? Math.max(s.total, d.totalInspections) : d.totalInspections,
-        completedToday: s ? s.today : d.completedToday,
+        // Live off the logs, never the stored columns — same as the two
+        // branches below. `Math.max(s.total, d.totalInspections)` used to sit
+        // here, which meant a stale directory counter outranked the real
+        // count and could only ever climb: handleSave wrote the displayed
+        // figure back, so each edit cemented the high-water mark.
+        totalInspections: s?.total ?? 0,
+        completedToday: s?.today ?? 0,
       });
     }
 
     // Registered mobile accounts that aren't in the directory yet.
     for (const p of profiles ?? []) {
-      if (p.role === "admin") continue;
+      // Officers only, and tested positively on purpose. The old
+      // `=== "admin"` skip admitted everything else, so once 'pending' and
+      // 'owner' became real roles an unactivated account and an
+      // establishment's point person both surfaced here as inspectors — and
+      // any role a later migration adds would too.
+      if (p.role !== "officer") continue;
       const email = p.email.trim().toLowerCase();
       if (!email || seenEmails.has(email)) continue;
       seenEmails.add(email);
@@ -220,10 +231,12 @@ export function Inspectors() {
     }
     setIsSaving(true);
     try {
-      // Inspection counters belong to the inspection flow, not to this form.
-      // The write merges, so carry the current values through rather than
-      // letting an edit reset them to zero.
-      const existing = editingId ? inspectors.find((i) => i.id === editingId) : null;
+      // Inspection counters belong to the inspection flow, not to this form:
+      // carry the STORED values through so an edit neither zeroes them nor
+      // rewrites them. Read from `data` (the raw directory) and not from
+      // `inspectors` — those rows carry the live log-derived counts, and
+      // writing one of those back is what made the stored counter a ratchet.
+      const existing = editingId ? (data ?? []).find((i) => i.id === editingId) : null;
 
       await saveInspector(editingId, {
         ...form,

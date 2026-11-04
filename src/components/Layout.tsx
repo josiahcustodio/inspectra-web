@@ -11,6 +11,7 @@ import {
   Table2,
   Map,
   Users,
+  UserCog,
   Settings as SettingsIcon,
   User,
   Menu,
@@ -38,6 +39,7 @@ const baseNavItems: { path: string; label: string; icon: typeof LayoutDashboard;
   { path: "inspectors", label: "Inspectors", icon: Users },
   { path: "masterlist", label: "Masterlist", icon: Table2, adminOnly: true },
   { path: "import", label: "Masterlist Import", icon: FileSpreadsheet, adminOnly: true },
+  { path: "access", label: "Access", icon: UserCog, adminOnly: true },
   { path: "settings", label: "Settings", icon: SettingsIcon },
 ];
 

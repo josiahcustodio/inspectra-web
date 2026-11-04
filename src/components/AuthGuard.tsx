@@ -1,8 +1,10 @@
 import { Navigate, useLocation, Outlet } from 'react-router';
 import { useAuth } from '@/lib/useAuth';
 
+import type { AppRole } from '@/lib/useAuth';
+
 interface AuthGuardProps {
-  allowedRoles?: ('admin' | 'officer')[];
+  allowedRoles?: Exclude<AppRole, null>[];
 }
 
 // [REF: WEB_AUTH_GUARD]
@@ -56,8 +58,11 @@ export function AuthGuard({ allowedRoles }: AuthGuardProps) {
       );
     }
     if (!allowedRoles.includes(role)) {
-      // User doesn't have the right role, redirect to their specific dashboard
-      return <Navigate to={`/${role}/dashboard`} replace />;
+      // Back to the index, which is the one place that knows where each role
+      // belongs. Building a path from the role (`/${role}/dashboard`) broke
+      // the moment roles without a dashboard existed: 'pending' and 'owner'
+      // would have been sent to /pending/dashboard and bounced in a loop.
+      return <Navigate to="/" replace />;
     }
   }
 

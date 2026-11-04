@@ -28,14 +28,14 @@
 //    answered 200 {sent:true} with email_sent_at still null: the 409 dedup
 //    never armed, and the same owner could mail themselves unlimited copies
 //    through the office provider while the record read "no copy emailed".
-//  - RESEND_API_KEY lives only in Supabase secrets; the browser never sees it.
+//  - BREVO_API_KEY lives only in Supabase secrets; the browser never sees it.
 //  - Edge Functions are served from the Supabase origin the web app's CSP
 //    already allows, so no CSP change is needed.
 //  - Defect text is inspector free text and is escaped by render.ts before it
 //    enters the markup.
 //
 // Deploy:   supabase functions deploy send-sanitary-order
-// Secrets:  supabase secrets set RESEND_API_KEY=re_...
+// Secrets:  supabase secrets set BREVO_API_KEY=xkeysib-...
 //           supabase secrets set SANITARY_ORDER_FROM="City Health Office <no-reply@yourdomain>"
 // Test:     deno test supabase/functions/send-sanitary-order/
 
@@ -43,6 +43,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   EstablishmentRow,
   OrderRow,
+  parseSender,
   renderHtml,
   renderSubject,
 } from "./render.ts";
@@ -66,13 +67,17 @@ const ESTABLISHMENT_COLUMNS =
   "business_name, owner_name, barangay, address, control_no, " +
   "point_person_name, point_person_email";
 
-// The one provider-specific function in this file. Swapping Resend for SMTP or
+// The one provider-specific function in this file. Swapping Brevo for SMTP or
 // another API is a change here and nowhere else.
+//
+// SANITARY_ORDER_FROM keeps the "Name <addr>" shape even though Brevo wants
+// the two halves apart: it is the shape an operator already knows from every
+// other mail config, and parseSender costs one regex.
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-  const key = Deno.env.get("RESEND_API_KEY");
+  const key = Deno.env.get("BREVO_API_KEY");
   if (!key) {
     throw new Error(
-      "RESEND_API_KEY is not set. Run: supabase secrets set RESEND_API_KEY=re_...",
+      "BREVO_API_KEY is not set. Run: supabase secrets set BREVO_API_KEY=xkeysib-...",
     );
   }
   const from = Deno.env.get("SANITARY_ORDER_FROM");
@@ -83,13 +88,26 @@ async function sendEmail(to: string, subject: string, html: string): Promise<voi
     );
   }
 
-  const res = await fetch("https://api.resend.com/emails", {
+  const { name: senderName, email: senderEmail } = parseSender(from);
+  if (!senderEmail.includes("@")) {
+    throw new Error(
+      `SANITARY_ORDER_FROM ("${from}") does not contain an email address.`,
+    );
+  }
+
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
+      "api-key": key,
       "Content-Type": "application/json",
+      Accept: "application/json",
     },
-    body: JSON.stringify({ from, to, subject, html }),
+    body: JSON.stringify({
+      sender: senderName ? { name: senderName, email: senderEmail } : { email: senderEmail },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
   });
 
   if (!res.ok) {
@@ -104,7 +122,7 @@ async function sendEmail(to: string, subject: string, html: string): Promise<voi
 Deno.serve(async (req) => {
   // Without this the Edge Runtime turns any throw into a bodyless
   // "500 Internal Server Error", which tells the operator nothing — a missing
-  // RESEND_API_KEY and an unverified sender domain look identical.
+  // BREVO_API_KEY and an unverified sender domain look identical.
   try {
     return await handle(req);
   } catch (e) {

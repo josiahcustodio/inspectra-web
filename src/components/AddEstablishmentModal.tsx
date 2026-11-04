@@ -26,6 +26,12 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
   const [categoryId, setCategoryId] = useState<string>("1");
   const [barangay, setBarangay] = useState("");
   const [street, setStreet] = useState("");
+  // Where an emailed copy of a Sanitary Order goes. Usually filled by the
+  // inspector on the phone at inspection time — this is the desk-side way to
+  // correct a typo, which matters because a wrong address silently sends a
+  // legal notice to a stranger.
+  const [pointPersonName, setPointPersonName] = useState("");
+  const [pointPersonEmail, setPointPersonEmail] = useState("");
   
   const [loading, setLoading] = useState(false);
 
@@ -49,6 +55,8 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
         setOwnerName(establishmentToEdit.owner_name || "");
         setPermitNo(establishmentToEdit.sanitary_permit_no || "");
         setControlNo(establishmentToEdit.control_no || "");
+        setPointPersonName(establishmentToEdit.point_person_name || "");
+        setPointPersonEmail(establishmentToEdit.point_person_email || "");
         
         let existingBarangay = "";
         let existingStreet = "";
@@ -88,6 +96,8 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
         setOwnerName("");
         setPermitNo("");
         setControlNo("");
+        setPointPersonName("");
+        setPointPersonEmail("");
         if (categories.length > 0) {
           setCategory(categories[0].name);
           setCategoryId(categories[0].id);
@@ -125,6 +135,12 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
         barangay: barangay,
         sanitary_permit_no: permitNo.trim() || null,
         control_no: controlNo.trim() || null,
+        point_person_name: pointPersonName.trim() || null,
+        // Lower-cased as well as trimmed: this is an address that gets matched
+        // and de-duplicated, and "Juan@x.com" and "juan@x.com" are one inbox.
+        // Blank becomes null, never "" — the delivery function selects on
+        // `point_person_email is not null`, which an empty string would pass.
+        point_person_email: pointPersonEmail.trim().toLowerCase() || null,
         category_id: categoryId,
         category: category,
       };
@@ -239,6 +255,31 @@ export function AddEstablishmentModal({ open, onOpenChange, establishmentToEdit,
             <div className="grid gap-2">
               <Label htmlFor="control">Control No.</Label>
               <Input id="control" value={controlNo} onChange={(e) => setControlNo(e.target.value)} placeholder="Optional" />
+            </div>
+          </div>
+
+          {/* Sanitary Order recipient. Kept next to the permit numbers rather
+              than with the address: it identifies a person to notify, not a
+              place to find. */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="pointPerson">Point Person</Label>
+              <Input
+                id="pointPerson"
+                value={pointPersonName}
+                onChange={(e) => setPointPersonName(e.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="pointPersonEmail">Point Person Email</Label>
+              <Input
+                id="pointPersonEmail"
+                type="email"
+                value={pointPersonEmail}
+                onChange={(e) => setPointPersonEmail(e.target.value)}
+                placeholder="For Sanitary Order copies"
+              />
             </div>
           </div>
         </div>

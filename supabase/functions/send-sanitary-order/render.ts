@@ -261,3 +261,16 @@ export function renderHtml(order: OrderRow, est: EstablishmentRow): string {
   </p>
 </div>`;
 }
+
+/// Splits SANITARY_ORDER_FROM into the two halves Brevo's API wants.
+///
+/// The env var keeps the "Name <addr>" shape every other mail config uses;
+/// a bare address is accepted too, and then there is no display name. Here
+/// rather than in index.ts so it is reachable from the tests.
+export function parseSender(from: string): { name: string; email: string } {
+  const match = from.match(/^\s*(.*?)\s*<\s*([^>]+?)\s*>\s*$/);
+  return {
+    name: match ? match[1].replace(/^"|"$/g, "").trim() : "",
+    email: (match ? match[2] : from).trim(),
+  };
+}

@@ -21,7 +21,7 @@ import {
   mapInspectionLog,
 } from "@/lib/firestore";
 import type { InspectionLog } from "@/lib/models";
-import { ratingColor, ratingLabel } from "@/lib/ratingScale";
+import { UNSCORED_LOG_LABEL, ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { byNewestFirst, isoDatePart, isoTimePart } from "@/lib/inspectionDates";
 
 function getStatusColor(status: string) {
@@ -41,7 +41,7 @@ function getStatus(rating: number | null | undefined): string {
   // guard is the last line of defence for a hand-built InspectionLog that never
   // went through the mapper, and five display bugs came from assuming otherwise.
   if (rating != null) return "Completed";
-  return "Scheduled";
+  return UNSCORED_LOG_LABEL;
 }
 
 const PAGE_SIZE = 20;

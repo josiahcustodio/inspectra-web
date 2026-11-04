@@ -83,6 +83,8 @@ export const mapEstablishment = (id: string, data: any): Establishment => ({
   masterlist_sheet: data.masterlist_sheet ?? null,
   status: data.status ?? null,
   last_seen_batch_id: data.last_seen_batch_id ?? null,
+  point_person_name: data.point_person_name ?? null,
+  point_person_email: data.point_person_email ?? null,
 });
 
 // Every nullable field is normalised rather than left to the spread, because
@@ -94,6 +96,7 @@ export const mapInspectionLog = (id: string, data: any): InspectionLog => ({
   ...(data as any),
   id,
   establishment_id: data.establishment_id ?? null,
+  establishment_name: data.establishment_name ?? null,
   category_id: data.category_id != null ? String(data.category_id) : null,
   category_name: data.category_name ?? null,
   inspector_name: data.inspector_name ?? null,
@@ -104,6 +107,18 @@ export const mapInspectionLog = (id: string, data: any): InspectionLog => ({
   photo_evidence_url: data.photo_evidence_url ?? null,
   signature_url: data.signature_url ?? null,
   signature_sha256: data.signature_sha256 ?? null,
+  // Sanitary Order. The spread above already carries these, so these lines
+  // are the same belt-and-braces as the rest: they make the declared `| null`
+  // honest for a row served without the columns (a log written before the
+  // order existed, or a select that drops them).
+  so_no: data.so_no ?? null,
+  so_issued_at: data.so_issued_at ?? null,
+  time_given: data.time_given ?? null,
+  deadline: data.deadline ?? null,
+  received_by_name: data.received_by_name ?? null,
+  received_signature_url: data.received_signature_url ?? null,
+  received_signature_sha256: data.received_signature_sha256 ?? null,
+  email_sent_at: data.email_sent_at ?? null,
   results: Array.isArray(data.results) ? data.results : [],
 });
 
@@ -145,7 +160,12 @@ export const mapReviewQueueItem = (id: string, data: any): import("./models").Re
 // the `inspectors` table above is only the admin-curated directory.
 export const mapProfile = (id: string, data: any): Profile => ({
   id,
-  role: data.role ?? "officer",
+  // 'pending' rather than 'officer' on an absent role, matching the reasoning
+  // in useAuth's [REF: NO_CLIENT_ROLE_FALLBACK]: with 'pending' and 'owner'
+  // real values, defaulting to a staff role turns an unactivated account into
+  // an apparent inspector. This mapper feeds the Inspectors directory, so the
+  // old default put those accounts in the inspector list.
+  role: data.role ?? "pending",
   email: data.email ?? "",
   created_at: data.created_at ?? null,
 });

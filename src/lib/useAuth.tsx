@@ -2,7 +2,16 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
-export type AppRole = 'admin' | 'officer' | null;
+// [REF: WEB_APP_ROLE]
+// Mirrors public.app_role (migration/sql/01_schema.sql). 'pending' and 'owner'
+// are not staff roles and have no dashboard: 'pending' is a new account nobody
+// has activated, 'owner' is an establishment's point person whose records live
+// in the mobile app. Both are routed to AccountStatus rather than into the
+// portal, because every RLS policy here denies them and the pages would render
+// as silently empty tables.
+export type AppRole = 'admin' | 'officer' | 'pending' | 'owner' | null;
+
+const KNOWN_ROLES: readonly string[] = ['admin', 'officer', 'pending', 'owner'];
 
 interface AuthState {
   user: User | null;
@@ -84,11 +93,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
           return;
         }
-        // Role from the profiles table. The row is created by the
-        // handle_new_user() trigger the moment the auth user is born, so
-        // "no row yet" is a brief race at worst — fall back to a self-insert
-        // for parity with the old client bootstrap (RLS pins it to our own
-        // uid with role 'officer', so this can never grant anything).
+        // Role from the profiles table, written by the handle_new_user()
+        // trigger the moment the auth user is born.
         const { data: profile, error: readError } = await supabase
           .from('profiles')
           .select('role')
@@ -96,32 +102,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           .maybeSingle();
         if (readError) throw new Error(readError.message);
 
+        // [REF: NO_CLIENT_ROLE_FALLBACK]
+        // Three officer fallbacks used to live in this block, and all three
+        // had to go when handle_new_user() stopped making everyone an officer:
+        //
+        //  1. an unrecognised stored role became 'officer'. With 'pending' and
+        //     'owner' now real values, that turned every unactivated account
+        //     into an apparent inspector — RLS still refused their data, so
+        //     the UI routed them into a portal of silently empty tables.
+        //  2. a missing profiles row became 'officer' too.
+        //  3. the client then INSERTED that row as `role: 'officer'`. That was
+        //     the client half of the profiles_insert policy, which
+        //     06_owner_role.sql drops precisely because it let any
+        //     authenticated user name themselves an officer.
+        //
+        // Nothing legitimate is lost: the trigger is security definer and
+        // creates the row server-side before this code can run.
         let role: AppRole;
-        if (profile) {
-          // Validate rather than trust-cast: a malformed/stale role value here
-          // must never propagate, since RoleRedirect has no route for it and
-          // would bounce the user in a loop between "/" and "/login".
-          const rawRole = profile.role;
-          role = rawRole === 'admin' || rawRole === 'officer' ? rawRole : 'officer';
+        if (profile && KNOWN_ROLES.includes(profile.role)) {
+          role = profile.role as AppRole;
         } else {
-          role = 'officer';
-          // supabase-js returns errors rather than throwing — a discarded
-          // failure here would leave the user with NO profiles row, where
-          // user_role() is NULL and every RLS policy filters all rows: a
-          // signed-in app in which every table is silently empty. Throw into
-          // the catch below so the retryProfile UI surfaces instead.
-          const { error: insertError } = await supabase.from('profiles').insert({
-            id: user.id,
-            role: 'officer',
-            email: user.email,
-          });
-          if (insertError) {
-            throw new Error(
-              insertError.code
-                ? `${insertError.code}: ${insertError.message}`
-                : insertError.message,
-            );
-          }
+          // Either no row (the trigger has not landed, or failed) or a value
+          // this build does not know. 'pending' is the only safe reading of
+          // both: it grants nothing, and AccountStatus explains the state
+          // instead of pretending the app is broken. A genuinely missing row
+          // is an operations incident, not a routine state — the old
+          // self-insert papered over it by handing out the keys.
+          role = 'pending';
         }
 
         if (mounted) {
@@ -129,7 +136,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             ...prev,
             user,
             session: true,
-            role: role || 'officer',
+            // No `|| 'officer'` fallback: `role` is always one of the known
+            // values by now, and a default here would reinstate exactly the
+            // behaviour the block above removed.
+            role,
             emailVerified: verified(user),
             needsMfa: false,
             isLoading: false,

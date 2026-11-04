@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import { CheckCircle2, ImageOff, MinusCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { InspectionLog } from "@/lib/models";
+import type { Establishment, InspectionLog } from "@/lib/models";
 import { isoDatePart, isoTimePart } from "@/lib/inspectionDates";
+import { SanitaryOrderView } from "@/components/SanitaryOrderView";
 
 // [REF: INSPECTION_CHECKLIST_VIEW]
 //
@@ -19,7 +20,9 @@ import { isoDatePart, isoTimePart } from "@/lib/inspectionDates";
 // that convention used 'Compliant' / 'Non-Compliant'. Normalise both.
 type AnswerKind = "pass" | "fail" | "na";
 
-function answerKind(answer: unknown): AnswerKind {
+// Exported for SanitaryOrderView, which derives the order's defect table from
+// the same answers and must agree with this view about what a failure is.
+export function answerKind(answer: unknown): AnswerKind {
   const a = String(answer ?? "").toLowerCase();
   if (a === "pass" || a === "compliant") return "pass";
   if (a === "fail" || a === "non-compliant") return "fail";
@@ -39,9 +42,20 @@ interface InspectionChecklistViewProps {
   error?: string | null;
   /** Re-runs the fetch. Omit it and the error state shows no Retry button. */
   onRetry?: () => void;
+  /** Passed through to the Sanitary Order, whose Name and Address lines come
+   *  off the establishment rather than the log. Callers that do not have it
+   *  (the Inspections list holds only log rows) may omit it; those lines then
+   *  print blank, as an unfilled form would. */
+  establishment?: Establishment | null;
 }
 
-export function InspectionChecklistView({ log, isLoading, error, onRetry }: InspectionChecklistViewProps) {
+export function InspectionChecklistView({
+  log,
+  isLoading,
+  error,
+  onRetry,
+  establishment,
+}: InspectionChecklistViewProps) {
   // Group the per-item answers under the sub-category their checklist template
   // assigned; items saved without one collect under "General".
   const groupedResults = useMemo(() => {
@@ -118,6 +132,15 @@ export function InspectionChecklistView({ log, isLoading, error, onRetry }: Insp
         </div>
       </div>
 
+      {/* Sanitary Order, when this inspection issued one.
+          Gated on `so_issued_at`, NOT on `so_no`: the number is typed off
+          CHO's pre-numbered booklet and may legitimately be blank, so testing
+          it would hide real orders. Placed above the remarks because it is the
+          operative document — the rest of this view is the record behind it. */}
+      {log.so_issued_at && (
+        <SanitaryOrderView log={log} establishment={establishment} />
+      )}
+
       {/* Remarks */}
       {log.remarks && (
         <div>
@@ -172,6 +195,16 @@ export function InspectionChecklistView({ log, isLoading, error, onRetry }: Insp
                           <p className="text-sm font-medium text-slate-900">
                             {item?.item_name ?? "Checklist item"}
                           </p>
+                          {/* The item's extra inputs (label → value), written by the mobile
+                              form for items whose template carries `fields`. Lists are
+                              multi-selects; blanks were never filled and are skipped. */}
+                          {Object.entries((item?.values ?? {}) as Record<string, unknown>)
+                            .filter(([, v]) => (Array.isArray(v) ? v.length > 0 : String(v ?? "") !== ""))
+                            .map(([k, v]) => (
+                              <p key={k} className="text-xs text-slate-600 mt-0.5">
+                                {k}: {Array.isArray(v) ? v.join(", ") : String(v)}
+                              </p>
+                            ))}
                           {item?.note && (
                             <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">{item.note}</p>
                           )}

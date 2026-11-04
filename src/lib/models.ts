@@ -22,6 +22,11 @@ export interface ChecklistTemplate {
   weight: number | null;
   sub_category: string | null;
   category_id: string | null;
+  // Extra inputs the mobile form asks for on this item besides Pass/Fail/N/A
+  // (the blanks and Y/N boxes of forms like Livestock Farm). Answers land in
+  // `InspectionLog.results[].values` keyed by label. `type` is text | number |
+  // date | yesno | choice | multi; the last two list their `options`.
+  fields?: { label: string; type?: string; options?: string[] }[];
 }
 
 export interface Establishment {
@@ -40,8 +45,9 @@ export interface Establishment {
   category: string | null;
   // Optional GPS coordinates. Nothing captures these yet — no screen in either
   // client writes them — so in practice they are absent on every record today.
-  // The GIS map plots an establishment only when both are present, which is why
-  // that map is currently empty rather than showing invented positions.
+  // Nothing reads them either: the GIS map works at barangay level, resolving
+  // an establishment by its address rather than by a pin (see
+  // [REF: GIS_BARANGAY_AGGREGATION] in pages/GISMap.tsx).
   latitude?: number | null;
   longitude?: number | null;
 
@@ -58,6 +64,12 @@ export interface Establishment {
   floor_area_sqm?: number | null;
   tel_no?: string | null;
   tin?: string | null;
+  // Where an emailed copy of a Sanitary Order goes. Captured on the mobile
+  // form at inspection time — the only moment anyone is standing in front of
+  // the person who knows it — and editable here. Absent on every record
+  // created before the order existed.
+  point_person_name?: string | null;
+  point_person_email?: string | null;
   group?: "food" | "non_food" | null; // which masterlist workbook it belongs to
   // Which sheet of the workbook this record last appeared on ("Bakery",
   // "SariSariStoreA"). Import bookkeeping, NOT a category: the importer
@@ -84,6 +96,13 @@ export interface Establishment {
 export interface InspectionLog {
   id: string; // uuid
   establishment_id: string | null; // uuid
+  // The establishment's name, denormalised onto the log by the mobile client
+  // at write time so any reader can display it without resolving the id. The
+  // column has always existed; this declaration had not, so TypeScript denied
+  // a field the mapper's spread was already delivering. Optional because logs
+  // predating the convention lack it, and `establishment_id` can dangle —
+  // history outlives deletes, which is exactly when this is the only name left.
+  establishment_name?: string | null;
   // Which checklist this inspection was scored against (the mobile client
   // writes both the category doc id and its denormalised name). This is
   // where an establishment's CATEGORY comes from in this system —
@@ -104,30 +123,66 @@ export interface InspectionLog {
   // before sign-off existed, and on one whose upload has not caught up yet.
   signature_url?: string | null;
   signature_sha256?: string | null;
-  // Per-item checklist answers, read straight off the `results` array field on
-  // the `inspection_logs` document — the same shape the Flutter client writes,
-  // so both clients read and write the same place.
+
+  // ── Sanitary Order (CHO-ESD-FR-04) ─────────────────────────────────────
+  // Present only on an inspection that found at least one defect. Written by
+  // the Flutter client at inspection time — the web admin reads these and
+  // never writes them, the same invariant as the rest of this record.
   //
-  // Logs written before that convention kept their answers in an
-  // `inspection_logs/{id}/inspection_results` sub-collection instead. Those were
-  // copied up into the parent `results` field and the sub-collections are now
-  // legacy; nothing writes to them, but they are still read — fetchInspectionDetails
-  // falls back to the sub-collection when this array is empty.
+  // `so_issued_at` is the marker that an order exists, NOT `so_no`: the number
+  // is typed off CHO's pre-numbered booklet and is allowed to stay null until
+  // their numbering pattern is known. Test `so_issued_at != null` to ask
+  // "did this inspection issue an order?"; a null `so_no` on an issued order
+  // is a blank line on the form, not a missing record.
+  so_no?: string | null;
+  so_issued_at?: string | null;
+  time_given?: string | null;
+  deadline?: string | null; // "YYYY-MM-DD" — a calendar day, not an instant
+  // The form's "Received by" line: the owner or point person acknowledging
+  // service on site. This is what makes the notice served — an emailed copy
+  // is a convenience afterwards. Stored at
+  // signatures/{establishment_id}/{log_id}_received.png, a DIFFERENT object
+  // from `signature_url` above ("Delivered by"); sharing one would overwrite
+  // the inspector's sign-off and break its sha256 pairing.
+  received_by_name?: string | null;
+  received_signature_url?: string | null;
+  received_signature_sha256?: string | null;
+  // Stamped by the delivery function, server-side. Null means "not emailed",
+  // which is also the state of every order issued before delivery existed.
+  email_sent_at?: string | null;
+  // Per-item checklist answers, read straight off the `results` jsonb array on
+  // the `inspection_logs` row — the same shape the Flutter client writes, so
+  // both clients read and write the same place. The Firestore-era
+  // `inspection_results` sub-collection is gone, folded into this field by the
+  // migration; there is no fallback read (see
+  // [REF: INSPECTION_DETAILS_FETCH_WEB] in lib/firestore.ts).
   //
   // Two screens render these answers, both through InspectionChecklistView: the
   // Inspections detail dialog and the establishment history modal. So the shape
   // of an entry is load-bearing — `sub_category`, `item_name`, `answer`, `weight`
   // and `note` are all read, and it stays `any[]` only because the two clients
   // have written it loosely over time.
+  //
+  // Entries also carry `correction` — the right-hand column of the Sanitary
+  // Order's table, what the establishment is ordered to do about the defect.
+  // The order's defect list is derived from here by filtering
+  // `answer === 'Fail'`, and NEVER by "has a note": a note can outlive the
+  // Fail that justified it, and printing one as a violation would cite
+  // something the inspector withdrew.
   results?: any[];
 }
 
-// A registered account (`profiles/{uid}`), written by the mobile client on
-// first sign-in. Only admins may list this collection — the officer-facing UI
-// treats a permission error on it as "source unavailable", not as a failure.
+// A registered account (one row in `profiles`), written server-side by the
+// handle_new_user() trigger the moment the auth user is born — no client
+// writes it. Only admins may list this table — the officer-facing UI treats a
+// permission error on it as "source unavailable", not as a failure.
 export interface Profile {
   id: string; // auth uid
-  role: string; // 'admin' | 'officer'
+  /** public.app_role: 'admin' | 'officer' | 'pending' | 'owner'. Only the
+   *  first two are staff; see AppRole in lib/useAuth.tsx. Kept as `string`
+   *  because a later migration can add a value this build predates — readers
+   *  must treat an unrecognised role as non-staff, never default it. */
+  role: string;
   email: string;
   created_at: string | null;
 }
