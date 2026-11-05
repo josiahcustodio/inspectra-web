@@ -7,11 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { InspectionChecklistView } from "@/components/InspectionChecklistView";
 import { PageStrip } from "@/components/PageStrip";
-import {
-  Calendar,
-  ClipboardCheck,
-  User,
-} from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useCollection } from "@/lib/useCollection";
 import {
@@ -135,49 +131,74 @@ export function Inspections() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
-        {inspections.length === 0 ? (
-          <Card className="p-12 bg-white rounded-xl  text-center">
-            <p className="text-muted-foreground font-bold">No inspections yet.</p>
-            <p className="text-sm text-muted-foreground font-medium mt-1">Records appear here live as soon as field inspectors submit them.</p>
-          </Card>
-        ) : (
-          pagedInspections.map((inspection) => (
-            <Card
-              key={inspection.id}
-              className="p-6 bg-white rounded-xl  hover:shadow-md transition-shadow cursor-pointer"
-              role="button"
-              tabIndex={0}
-              onClick={() => openDetails(inspection)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  openDetails(inspection);
-                }
-              }}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex gap-4 flex-1">
-                  <div className="w-12 h-12 rounded-full bg-slate-100  flex items-center justify-center flex-shrink-0">
-                    <ClipboardCheck className="w-6 h-6 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-bold text-slate-900 text-lg">{inspection.establishmentName}</h3>
-                      {inspection.ratingBandLabel && (
+      {inspections.length === 0 ? (
+        <Card className="p-12 bg-white rounded-xl  text-center">
+          <p className="text-muted-foreground font-bold">No inspections yet.</p>
+          <p className="text-sm text-muted-foreground font-medium mt-1">Records appear here live as soon as field inspectors submit them.</p>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border">
+          <div className="overflow-x-auto">
+            {/* table-fixed keeps every column at the same position on every page. */}
+            <table className="w-full min-w-[60rem] table-fixed text-left border-collapse">
+              <thead className="bg-white border-b border-border">
+                <tr>
+                  <th className="py-3 px-4 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Establishment</th>
+                  <th className="py-3 px-4 w-56 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Rating</th>
+                  <th className="py-3 px-4 w-32 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Status</th>
+                  <th className="py-3 px-4 w-48 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Inspector</th>
+                  <th className="py-3 px-4 w-32 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Date</th>
+                  <th className="py-3 px-4 w-24 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {pagedInspections.map((inspection) => (
+                  // Same row pattern as the establishments table: no role="button",
+                  // which would hide the row/cell semantics from screen readers.
+                  <tr
+                    key={inspection.id}
+                    className="hover:bg-slate-50 transition-colors cursor-pointer"
+                    tabIndex={0}
+                    aria-haspopup="dialog"
+                    onClick={() => openDetails(inspection)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openDetails(inspection);
+                      }
+                    }}
+                  >
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                          <ClipboardCheck className="w-4 h-4 text-primary" />
+                        </div>
+                        <span className="font-bold text-slate-900 text-sm truncate" title={inspection.establishmentName}>
+                          {inspection.establishmentName}
+                        </span>
+                        <span className="sr-only">— press Enter to view inspection details</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      {inspection.ratingBandLabel ? (
                         <span
-                          className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border"
+                          className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap"
                           style={{
                             backgroundColor: `color-mix(in srgb, ${ratingColor(inspection.score)} 15%, transparent)`,
                             color: ratingColor(inspection.score),
                             borderColor: `color-mix(in srgb, ${ratingColor(inspection.score)} 30%, transparent)`
                           }}
                         >
-                          {inspection.ratingBandLabel} ({inspection.score}%)
+                          {/* One decimal at most: the score is a double and the column is fixed-width. */}
+                          {inspection.ratingBandLabel} ({Number(inspection.score?.toFixed(1))}%)
                         </span>
+                      ) : (
+                        <span className="text-sm text-slate-400">—</span>
                       )}
+                    </td>
+                    <td className="py-3 px-4">
                       <span
-                        className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border"
+                        className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border whitespace-nowrap"
                         style={{
                           backgroundColor: `color-mix(in srgb, ${getStatusColor(inspection.status)} 15%, transparent)`,
                           color: getStatusColor(inspection.status),
@@ -186,28 +207,19 @@ export function Inspections() {
                       >
                         {inspection.status}
                       </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-x-6 gap-y-2 text-sm">
-                      <div className="flex items-center gap-2 text-muted-foreground font-medium">
-                        <User className="w-4 h-4" />
-                        <span>{inspection.inspectorName}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-muted-foreground font-medium">
-                        <Calendar className="w-4 h-4" />
-                        <span>{inspection.date}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-muted-foreground font-medium">
-                        <ClipboardCheck className="w-4 h-4" />
-                        <span>{inspection.time}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))
-        )}
-      </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-slate-700 font-medium truncate" title={inspection.inspectorName}>
+                      {inspection.inspectorName}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-slate-600 font-medium whitespace-nowrap tabular-nums">{inspection.date}</td>
+                    <td className="py-3 px-4 text-sm text-slate-600 font-medium whitespace-nowrap tabular-nums">{inspection.time}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* Pager */}
       {inspections.length > PAGE_SIZE && (

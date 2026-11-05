@@ -4,14 +4,46 @@ import { Building2, Edit2 } from "lucide-react";
 import { useCollection } from "@/lib/useCollection";
 import { COLLECTIONS, mapEstablishment } from "@/lib/firestore";
 import type { Establishment } from "@/lib/models";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AddEstablishmentModal } from "@/components/AddEstablishmentModal";
 import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModal";
+import { PageStrip } from "@/components/PageStrip";
+import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { formatShortDate } from "@/lib/inspectionDates";
+
+const PAGE_SIZE = 50;
 
 export function Establishments() {
   const { data, isLoading, error } = useCollection(COLLECTIONS.establishments, mapEstablishment);
   const establishments = data ?? [];
+  const [barangayFilter, setBarangayFilter] = useState("all");
+  const [page, setPage] = useState(1);
+
+  // Compared through canonicalBarangay so old raw spellings match the dropdown,
+  // same as the masterlist. Sorted because the snapshot has no fixed order, and
+  // pages cut from an unordered list would repeat or skip records.
+  const filtered = useMemo(
+    () =>
+      (data ?? [])
+        .filter((e) => barangayFilter === "all" || canonicalBarangay(barangayOfEstablishment(e)) === barangayFilter)
+        .sort((a, b) => a.business_name.localeCompare(b.business_name)),
+    [data, barangayFilter],
+  );
+
+  const barangayOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const e of data ?? []) {
+      const name = canonicalBarangay(barangayOfEstablishment(e));
+      if (name) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+  }, [data]);
+
+  // Clamped so a live update that shrinks the list can't leave an empty page.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pagedEstablishments = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEstablishment, setSelectedEstablishment] = useState<Establishment | null>(null);
 
@@ -42,7 +74,24 @@ export function Establishments() {
         </Button>
       </div>
 
-      <Card className="flex-1 overflow-hidden flex flex-col bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border">
+      <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
+        <select
+          aria-label="Filter by barangay"
+          value={barangayFilter}
+          onChange={(e) => { setBarangayFilter(e.target.value); setPage(1); }}
+          className="text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900 max-w-56"
+        >
+          <option value="all">All barangays</option>
+          {barangayOptions.map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+        <span className="text-sm text-muted-foreground font-medium ml-auto tabular-nums">
+          {filtered.length} establishments
+        </span>
+      </div>
+
+      <Card className="flex-1 overflow-hidden flex flex-col gap-0 bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border">
         {isLoading ? (
           <div className="p-12 text-center my-auto">
             <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto" />
@@ -59,7 +108,9 @@ export function Establishments() {
             <p className="text-sm text-muted-foreground font-medium mt-1">Add one to get started.</p>
           </div>
         ) : (
-          <div className="flex-1 overflow-auto min-h-0">
+          <>
+          {/* Keyed by page so a new page starts scrolled to the top. */}
+          <div key={currentPage} className="flex-1 overflow-auto min-h-0">
             {/* [REF: ESTABLISHMENT_LIST] */}
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 bg-white z-10 shadow-sm border-b border-border">
@@ -73,7 +124,7 @@ export function Establishments() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {establishments.map((establishment) => (
+                {pagedEstablishments.map((establishment) => (
                   // [REF: ESTABLISHMENT_HISTORY_MODAL]
                   // The whole row opens the inspection history. No role="button"
                   // here on purpose — that would replace the row/cell semantics a
@@ -139,6 +190,20 @@ export function Establishments() {
               </tbody>
             </table>
           </div>
+          {filtered.length > PAGE_SIZE && (
+            <div className="border-t border-border p-3 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm text-muted-foreground font-medium">
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} establishments
+              </p>
+              <PageStrip
+                current={currentPage}
+                pageCount={pageCount}
+                onPageChange={setPage}
+                className="mx-0 w-auto justify-end"
+              />
+            </div>
+          )}
+          </>
         )}
       </Card>
 
