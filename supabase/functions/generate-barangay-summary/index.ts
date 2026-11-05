@@ -1,10 +1,10 @@
 // [REF: AI_BARANGAY_SUMMARY]
 //
 // POST /functions/v1/generate-barangay-summary
-// Body (optional): { "days": 90 }
-// Returns: { narrative, from, to, city, barangays }
+// Body (all optional): { "from": ISO, "to": ISO, "barangays": ["Alangilan"] }
+// Returns: { narrative, from, to, city, barangays, scope_barangays }
 //
-// Turns the inspection_logs of the last N days into the data for a barangay-level
+// Turns the inspection_logs of a date range into the data for a barangay-level
 // compliance report: SQL-side data is aggregated here (counts, rating bands,
 // recurring failed checklist items), then ONE Claude call writes the narrative.
 // The hard numbers are computed in aggregate.ts, never by the model — the model
@@ -25,7 +25,7 @@
 
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk";
-import { aggregate, BarangaySummary, EstablishmentRow, LogRow } from "./aggregate.ts";
+import { aggregate, BarangaySummary, EstablishmentRow, LogRow, logBarangayResolver } from "./aggregate.ts";
 
 // Browser calls (supabase.functions.invoke) are cross-origin preflighted.
 const CORS_HEADERS = {
@@ -34,6 +34,8 @@ const CORS_HEADERS = {
 };
 
 const DEFAULT_WINDOW_DAYS = 90;
+const MAX_WINDOW_DAYS = 366; // Same limit as src/lib/complianceReportScope.ts.
+const DAY_MS = 24 * 60 * 60 * 1000;
 // Full narrative sections only for the busiest barangays; the rest get a
 // one-line mention. Keeps the report readable and the output bounded no matter
 // how many barangays had inspections.
@@ -48,14 +50,14 @@ const json = (status: number, body: unknown) =>
 // Same pager as src/lib/supabase.ts fetchAllRows, same reason: PostgREST caps a
 // response at 1000 rows and a bare select would silently truncate. order('id')
 // keeps the pages deterministic under concurrent writes.
-async function fetchAllRows<T>(db: SupabaseClient, table: string, columns: string, sinceDate?: string): Promise<T[]> {
+async function fetchAllRows<T>(db: SupabaseClient, table: string, columns: string, dates?: { from: string; to: string }): Promise<T[]> {
   const PAGE = 1000;
   const rows: T[] = [];
   for (let from = 0; ; from += PAGE) {
     let query = db.from(table).select(columns).order("id").range(from, from + PAGE - 1);
     // gte also drops NULL inspection_date rows — a dateless log can't be
     // attributed to the reporting window, so excluding it is the honest call.
-    if (sinceDate) query = query.gte("inspection_date", sinceDate);
+    if (dates) query = query.gte("inspection_date", dates.from).lte("inspection_date", dates.to);
     const { data, error } = await query;
     if (error) throw new Error(`${table}: ${error.message}`);
     rows.push(...((data ?? []) as T[]));
@@ -63,11 +65,12 @@ async function fetchAllRows<T>(db: SupabaseClient, table: string, columns: strin
   }
 }
 
-function buildPrompt(city: BarangaySummary, detailed: BarangaySummary[], rest: BarangaySummary[], from: string, to: string): string {
+function buildPrompt(city: BarangaySummary, detailed: BarangaySummary[], rest: BarangaySummary[], from: string, to: string, scope: string[] | null): string {
   // The model writes prose only. Every number it may cite is in this digest;
   // the system prompt forbids inventing anything beyond it.
   const digest = {
     reporting_window: { from, to },
+    scope: scope ? { selected_barangays_only: scope } : "all barangays with inspections",
     rating_scale:
       "Scores are 0-100. Bands: 90-100 Excellent, 70-89 Very Satisfactory, " +
       "0-69 Satisfactory. CAUTION: despite the name, 'Satisfactory' is the " +
@@ -97,6 +100,7 @@ You will receive a JSON digest of inspection data. Write a report from it, follo
 
 - Use ONLY the numbers and notes in the digest. Never invent figures, establishment names, or trends the data does not show. If the data for a barangay is thin (few inspections, no notes), say so plainly instead of padding.
 - "Satisfactory" (0-69) is the LOWEST rating band in this system — treat those scores as failing / high-risk, never as acceptable.
+- "city_wide" totals only the barangays in "scope". When scope is selected barangays, write about those barangays only: never present the totals as the whole city's, and never compare them with barangays outside the scope.
 - Fill the fields of the required JSON format. The tables and charts around your prose already show every figure, so interpret the data rather than reciting it.
 - executive_summary is exactly five sentences for a busy health officer: overall compliance, where the risk is concentrated, the most common violations, the data's limits if any, and what to do next.
 - citywide_findings is one paragraph on the patterns across barangays.
@@ -167,30 +171,41 @@ async function handle(req: Request): Promise<Response> {
   const { data: auth } = await db.auth.getUser();
   if (!auth?.user) return json(401, { error: "Sign in to generate reports." });
 
-  let body: { days?: number } = {};
+  let body: { from?: string; to?: string; barangays?: string[] } = {};
   try {
     if (req.headers.get("content-type")?.includes("application/json")) body = await req.json();
   } catch {
     // An unreadable body just means "use the defaults".
   }
-  const days = Number.isFinite(body.days) && body.days! > 0 ? Math.min(body.days!, 366) : DEFAULT_WINDOW_DAYS;
-  const to = new Date();
-  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+  const to = body.to ? new Date(body.to) : new Date();
+  const from = body.from ? new Date(body.from) : new Date(to.getTime() - DEFAULT_WINDOW_DAYS * DAY_MS);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
+    return json(400, { error: "Choose a valid date range." });
+  }
+  if (to.getTime() - from.getTime() > MAX_WINDOW_DAYS * DAY_MS) {
+    return json(400, { error: `Choose a date range of up to ${MAX_WINDOW_DAYS} days.` });
+  }
+  const scope = body.barangays ?? null;
+  if (scope !== null && (!Array.isArray(scope) || scope.some((b) => typeof b !== "string"))) {
+    return json(400, { error: "Barangays must be a list of names." });
+  }
 
-  const [logs, establishments] = await Promise.all([
+  const [rangeLogs, establishments] = await Promise.all([
     fetchAllRows<LogRow>(
       db,
       "inspection_logs",
       "establishment_id, establishment_name, percentage_rating, remarks, inspection_date, results",
-      from.toISOString(),
+      { from: from.toISOString(), to: to.toISOString() },
     ),
     // address is fetched only for the legacy-barangay fallback in aggregate.ts.
     fetchAllRows<EstablishmentRow>(db, "establishments", "id, business_name, barangay, address"),
   ]);
 
+  const barangayOfLog = logBarangayResolver(establishments);
+  const logs = scope ? rangeLogs.filter((log) => scope.includes(barangayOfLog(log))) : rangeLogs;
   const summaries = aggregate(logs, establishments);
   if (summaries.length === 0) {
-    return json(422, { error: `No inspections recorded in the last ${days} days.` });
+    return json(422, { error: "No inspections match this date range and these barangays." });
   }
   // With no establishments every log lands in one bucket: the city-wide totals,
   // averaged over raw scores rather than the barangays' rounded averages.
@@ -213,7 +228,7 @@ async function handle(req: Request): Promise<Response> {
     fallbacks: "default",
     output_config: { format: { type: "json_schema", schema: NARRATIVE_SCHEMA } },
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildPrompt(city, detailed, rest, from.toISOString(), to.toISOString()) }],
+    messages: [{ role: "user", content: buildPrompt(city, detailed, rest, from.toISOString(), to.toISOString(), scope) }],
   });
 
   if (response.stop_reason === "refusal") {
@@ -234,5 +249,6 @@ async function handle(req: Request): Promise<Response> {
     to: to.toISOString(),
     city,
     barangays: summaries,
+    scope_barangays: scope,
   });
 }

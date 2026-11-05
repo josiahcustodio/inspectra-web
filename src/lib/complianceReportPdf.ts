@@ -21,6 +21,8 @@ export interface ComplianceReport {
   to: string;
   city: BarangayDigest;
   barangays: BarangayDigest[];
+  /** The barangays picked in the dialog. Null when the report covers all of them. */
+  scope_barangays: string[] | null;
   narrative: {
     executive_summary: string;
     citywide_findings: string;
@@ -67,8 +69,13 @@ const formatDate = (iso: string) =>
 /** Manila's calendar date, yyyy-mm-dd, for the file name. */
 const fileDate = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
 
-export function complianceReportFileName(report: Pick<ComplianceReport, "to">): string {
-  return `Inspectra_Compliance_Report_${fileDate(report.to)}.pdf`;
+export function complianceReportFileName(report: Pick<ComplianceReport, "from" | "to">): string {
+  return `Inspectra_Compliance_Report_${fileDate(report.from)}_to_${fileDate(report.to)}.pdf`;
+}
+
+function scopeText(scope: string[] | null): string {
+  if (!scope) return "All barangays";
+  return scope.length <= 3 ? scope.join(", ") : `${scope.length} selected barangays`;
 }
 
 const plural = (n: number, word: string) => `${n.toLocaleString("en-PH")} ${word}${n === 1 ? "" : "s"}`;
@@ -158,7 +165,9 @@ export async function buildComplianceReportPdf(report: ComplianceReport): Promis
   doc.text("Barangay Sanitary", MARGIN, 31);
   doc.text("Compliance Report", MARGIN, 41);
   font(10, "#FFFFFF");
-  doc.text(`Reporting period: ${period}`, MARGIN, 50);
+  doc.text(`Reporting period: ${period}`, MARGIN, 49);
+  font(9, BRAND_TINT);
+  doc.text((doc.splitTextToSize(pdfText(`Coverage: ${scopeText(report.scope_barangays)}`), CONTENT_W) as string[])[0], MARGIN, 54);
   font(8, BRAND_TINT, "bold");
   doc.text("EXECUTIVE REPORT  •  AI-DRAFTED", PAGE_W - MARGIN, 19, { align: "right" });
 
@@ -231,7 +240,7 @@ export async function buildComplianceReportPdf(report: ComplianceReport): Promis
   }
 
   // --- City-wide findings ---------------------------------------------------
-  heading("City-wide Findings");
+  heading(report.scope_barangays ? "Overall Findings" : "City-wide Findings");
   paragraph(narrative.citywide_findings);
   y += 7;
 

@@ -5,7 +5,7 @@
 // client changes and nobody remembers this function has its own copy.
 
 import { assertEquals } from "jsr:@std/assert";
-import { aggregate, bandOf, barangayOf, isFailedAnswer } from "./aggregate.ts";
+import { aggregate, bandOf, barangayOf, isFailedAnswer, logBarangayResolver } from "./aggregate.ts";
 
 Deno.test("band thresholds mirror ratingScale.ts (90 / 70, inclusive)", () => {
   assertEquals(bandOf(90), "excellent");
@@ -77,4 +77,8 @@ Deno.test("aggregate counts, averages, violations and the Unknown bucket", () =>
   assertEquals(city.establishments_inspected, 2);
   assertEquals(city.average_rating, 80);
   assertEquals(city.top_failed_items, [{ item: "Waste segregation", failures: 2 }]);
+
+  // index.ts filters to the selected barangays this way, "Unknown" included.
+  const resolve = logBarangayResolver(establishments);
+  assertEquals(logs.map(resolve), ["Alangilan", "Alangilan", "Unknown"]);
 });

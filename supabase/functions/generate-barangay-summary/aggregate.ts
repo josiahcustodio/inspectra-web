@@ -10,7 +10,7 @@
 //   - rating bands (90 / 70 thresholds)  → src/lib/ratingScale.ts
 //   - answer kinds (Pass/Fail/NA + legacy Compliant/Non-Compliant)
 //                                         → src/components/InspectionChecklistView.tsx
-//   - barangay fallback chain             → src/pages/Dashboard.tsx [REF: KPI_STATS]
+//   - barangay fallback chain             → src/lib/complianceReportScope.ts
 
 export interface LogRow {
   establishment_id: string | null;
@@ -77,12 +77,21 @@ export function bandOf(score: number): "excellent" | "very_satisfactory" | "sati
   return "satisfactory";
 }
 
-export function aggregate(logs: LogRow[], establishments: EstablishmentRow[]): BarangaySummary[] {
+/** Resolves a log to its barangay's bucket name. */
+export function logBarangayResolver(establishments: EstablishmentRow[]): (log: LogRow) => string {
   const estBarangay = new Map<string, string>();
   for (const est of establishments) {
     const brgy = barangayOf(est);
     if (brgy) estBarangay.set(est.id, brgy);
   }
+  // Same bucket the dashboard uses for logs whose establishment has no
+  // barangay (or no establishment at all) — dropping them would make the
+  // report disagree with the dashboard's totals.
+  return (log) => (log.establishment_id && estBarangay.get(log.establishment_id)) || "Unknown";
+}
+
+export function aggregate(logs: LogRow[], establishments: EstablishmentRow[]): BarangaySummary[] {
+  const barangayOfLog = logBarangayResolver(establishments);
 
   interface Acc {
     inspections: number;
@@ -99,10 +108,7 @@ export function aggregate(logs: LogRow[], establishments: EstablishmentRow[]): B
   const byBarangay = new Map<string, Acc>();
 
   for (const log of logs) {
-    // Same bucket the dashboard uses for logs whose establishment has no
-    // barangay (or no establishment at all) — dropping them would make the
-    // report disagree with the dashboard's totals.
-    const brgy = (log.establishment_id && estBarangay.get(log.establishment_id)) || "Unknown";
+    const brgy = barangayOfLog(log);
 
     let acc = byBarangay.get(brgy);
     if (!acc) {

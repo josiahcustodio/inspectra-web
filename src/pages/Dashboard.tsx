@@ -14,6 +14,7 @@ import {
   Cell,
 } from "recharts";
 import { BarangaySummaryDialog } from "@/components/BarangaySummaryDialog";
+import { barangayOfEstablishment } from "@/lib/complianceReportScope";
 import { useCollection } from "@/lib/useCollection";
 import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/firestore";
 import {
@@ -65,15 +66,8 @@ export function Dashboard() {
 
     const estToBrgy = new Map<string, string>();
     for (const est of establishments) {
-      if (est.barangay) {
-        estToBrgy.set(est.id, est.barangay);
-      } else if (typeof est.address === 'string' && est.address) {
-        // Legacy records where address was still a plain string
-        estToBrgy.set(est.id, est.address);
-      } else if (est.address && typeof est.address === 'object' && est.address.barangay) {
-        // AddEstablishmentModal now writes address as a structured object
-        estToBrgy.set(est.id, est.address.barangay);
-      }
+      const brgy = barangayOfEstablishment(est);
+      if (brgy) estToBrgy.set(est.id, brgy);
     }
 
     for (const log of inspectionLogs) {
@@ -144,7 +138,7 @@ export function Dashboard() {
           <p className="text-muted-foreground font-medium text-sm">Welcome back. Here's what's happening today in Batangas City.</p>
         </div>
         {/* [REF: AI_BARANGAY_SUMMARY] */}
-        <BarangaySummaryDialog />
+        <BarangaySummaryDialog establishments={establishments} logs={inspectionLogs} />
       </div>
 
       {/* Bento Grid Layer 1 */}
