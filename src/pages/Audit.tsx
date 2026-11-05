@@ -72,9 +72,11 @@ export function Audit() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [fetching, setFetching] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setFetching(true);
     const start = (page - 1) * PAGE_SIZE;
     let q = supabase
       .from("audit_log")
@@ -95,6 +97,7 @@ export function Audit() {
 
     q.then(({ data, count, error }) => {
       if (cancelled) return;
+      setFetching(false);
       if (error) {
         setError(error.message);
         setRows([]);
@@ -119,9 +122,9 @@ export function Audit() {
             Who changed what, and when. Written by the database on every change; nobody can edit or delete it.
           </p>
         </div>
-        <Button variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh
+        <Button variant="outline" disabled={fetching} onClick={() => setReloadKey((k) => k + 1)}>
+          <RefreshCw className={`w-4 h-4 mr-2 ${fetching ? "animate-spin" : ""}`} />
+          {fetching ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
 

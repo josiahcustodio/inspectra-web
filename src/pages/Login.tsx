@@ -4,11 +4,36 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ShieldCheck, ShieldQuestion } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { challengeAndVerifyTotp } from "@/lib/totp";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/useAuth";
+
+// shortcut: placeholder legal copy written by the dev team, replace with the CHO's reviewed text before public rollout.
+const LEGAL = {
+  privacy: {
+    title: "Privacy Policy",
+    body: [
+      "Inspectra is operated by the Batangas City Health Office (CHO) to record sanitary inspections of business establishments.",
+      "What we collect: your account email, name and role; inspection records you create (establishment details, checklist answers, scores, photos and signatures); and an audit trail of changes made under your account.",
+      "Why: to issue and track sanitary permits and sanitary orders, and to keep an accountable record of every inspection, as required of the CHO under P.D. 856 (Code on Sanitation of the Philippines).",
+      "Who sees it: CHO administrators and inspectors with an issued account. Sanitary order copies are emailed only to the establishment's point person.",
+      "Retention: inspection records are kept as official CHO records. Accounts are removed by the administrator when access ends.",
+      "Your rights under the Data Privacy Act of 2012 (R.A. 10173): you may ask the CHO to view or correct the personal data held about you.",
+    ],
+  },
+  terms: {
+    title: "Terms and Conditions",
+    body: [
+      "Accounts are issued by the CHO administrator. Do not share your password or authenticator codes, and sign out on shared devices.",
+      "Use Inspectra only for official CHO sanitary inspection work. Every record you create or change is written to a tamper-proof audit trail under your account.",
+      "Inspection results, scores and sanitary orders are official CHO documents. Enter only what you observed on site.",
+      "The CHO may suspend or remove an account that is misused. Misuse of official records is subject to the applicable civil service and criminal laws.",
+    ],
+  },
+} as const;
 
 export function Login() {
   const navigate = useNavigate();
@@ -17,6 +42,11 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  const [agreed, setAgreed] = useState(false);
+  const [legal, setLegal] = useState<keyof typeof LEGAL | null>(null);
+  const legalLink = (key: keyof typeof LEGAL, label: string, className: string) => (
+    <button type="button" onClick={() => setLegal(key)} className={className}>{label}</button>
+  );
 
   // A fully-signed-in session means this page was reached by typing /login
   // while signed in. Redirect, and return null on the way out so the form
@@ -112,9 +142,9 @@ export function Login() {
           <div className="flex items-center gap-4 text-emerald-100/60 text-sm font-medium">
             <span>© {new Date().getFullYear()} Inspectra Systems</span>
             <span>•</span>
-            <a href="#" className="hover:text-white transition-colors">Privacy</a>
+            {legalLink("privacy", "Privacy", "hover:text-white transition-colors")}
             <span>•</span>
-            <a href="#" className="hover:text-white transition-colors">Terms</a>
+            {legalLink("terms", "Terms", "hover:text-white transition-colors")}
           </div>
         </div>
       </div>
@@ -206,10 +236,24 @@ export function Login() {
                   required
                 />
               </div>
+              <label className="flex items-start gap-2 text-sm text-slate-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-emerald-600"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                />
+                <span>
+                  I have read and agree to the{" "}
+                  {legalLink("terms", "Terms and Conditions", "text-primary font-medium hover:underline")}
+                  {" "}and{" "}
+                  {legalLink("privacy", "Privacy Policy", "text-primary font-medium hover:underline")}.
+                </span>
+              </label>
               <Button 
                 type="submit" 
                 className="w-full h-12 text-base font-medium bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-all"
-                disabled={isLoading}
+                disabled={isLoading || !agreed}
               >
                 {isLoading ? (
                   <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />
@@ -226,6 +270,17 @@ export function Login() {
           )}
         </div>
       </div>
+
+      <Dialog open={legal !== null} onOpenChange={(open) => { if (!open) setLegal(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-slate-900 font-bold">{legal ? LEGAL[legal].title : ""}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-slate-600 leading-relaxed max-h-[60vh] overflow-y-auto">
+            {legal ? LEGAL[legal].body.map((p) => <p key={p}>{p}</p>) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

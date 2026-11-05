@@ -253,11 +253,14 @@ export function Inspectors() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Are you sure you want to delete this inspector?")) return;
+  const [deleteTarget, setDeleteTarget] = useState<Inspector | null>(null);
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
     try {
-      await deleteInspector(id);
+      await deleteInspector(deleteTarget.id);
       toast.success("Inspector deleted.");
+      setDeleteTarget(null);
     } catch (err: any) {
       toast.error(err?.message || "Failed to delete inspector.");
     }
@@ -407,7 +410,7 @@ export function Inspectors() {
                           variant="outline"
                           size="sm"
                           className="border-red-200 text-red-600 hover:bg-red-50 font-bold"
-                          onClick={() => handleDelete(inspector.id)}
+                          onClick={() => setDeleteTarget(inspector)}
                         >
                           <Trash2 className="w-4 h-4 mr-1" />
                           Delete
@@ -433,6 +436,24 @@ export function Inspectors() {
       </div>
 
       {/* Add / Edit Dialog */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-slate-900 font-bold">Delete inspector?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            <span className="font-bold text-slate-900">{deleteTarget?.name}</span> will be removed from the directory. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleDelete}>
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

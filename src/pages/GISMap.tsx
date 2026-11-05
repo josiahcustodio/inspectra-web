@@ -109,6 +109,9 @@ export function GISMap() {
   const [shadingEnabled, setShadingEnabled] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  // Bumped by search/reset so the map re-frames even when `selected` did not
+  // change (same barangay picked twice, or "whole city" after a manual zoom).
+  const [frameKey, setFrameKey] = useState(0);
 
   const { data: establishments } = useCollection(COLLECTIONS.establishments, mapEstablishment);
   const { data: inspectionLogs } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
@@ -387,17 +390,19 @@ export function GISMap() {
     } else {
       map.flyToBounds(layer.getBounds(), { padding: [20, 20], duration: 0.8 });
     }
-  }, [selected]);
+  }, [selected, frameKey]);
 
   const selectBarangay = (name: string) => {
     setSelected(name);
     setSearchQuery(name);
     setShowSuggestions(false);
+    setFrameKey((k) => k + 1);
   };
 
   const resetView = () => {
     setSelected(null);
     setSearchQuery("");
+    setFrameKey((k) => k + 1);
   };
 
   const tooltipCounts = (name: string) => byBarangay.get(name)?.total ?? 0;
@@ -448,7 +453,9 @@ export function GISMap() {
                     <button
                       key={name}
                       className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
-                      onClick={() => selectBarangay(name)}
+                      // mousedown, not click: the input's blur closes the list
+                      // before a click can land, so the pick was lost.
+                      onMouseDown={(e) => { e.preventDefault(); selectBarangay(name); }}
                     >
                       <p className="font-bold text-slate-900 text-sm">{name}</p>
                       <p className="text-xs text-muted-foreground font-medium">

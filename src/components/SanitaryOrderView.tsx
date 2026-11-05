@@ -276,33 +276,15 @@ export function SanitaryOrderView({ log, establishment }: SanitaryOrderViewProps
         <div className="grid grid-cols-2 gap-6 mb-6">
           <div>
             <p className="text-xs font-semibold mb-1">Delivered by:</p>
-            {log.signature_url ? (
-              <img
-                src={log.signature_url}
-                alt="Inspector's signature"
-                className="h-12 w-auto"
-              />
-            ) : (
-              <div className="h-12" />
-            )}
+            <div className="h-12" />
             <p className="border-t border-slate-400 pt-1 text-xs">
               {log.inspector_name || BLANK}
             </p>
           </div>
           <div>
             <p className="text-xs font-semibold mb-1">Received by:</p>
-            {/* The acknowledgment that makes the notice served. A missing one
-                means the order was recorded but service was not evidenced —
-                worth looking plainly blank rather than being tidied away. */}
-            {log.received_signature_url ? (
-              <img
-                src={log.received_signature_url}
-                alt="Recipient's signature"
-                className="h-12 w-auto"
-              />
-            ) : (
-              <div className="h-12" />
-            )}
+            {/* Blank on purpose: signatures are wet ink on the printed copy. */}
+            <div className="h-12" />
             <p className="border-t border-slate-400 pt-1 text-xs">
               {log.received_by_name || BLANK}
             </p>
@@ -318,7 +300,7 @@ export function SanitaryOrderView({ log, establishment }: SanitaryOrderViewProps
       {/* Delivery state, for the office rather than the recipient — so it sits
           outside the printable form. `email_sent_at` is the only delivery
           claim this system can defend: it records that a copy was sent, never
-          that anyone read it. The signature above is the service of notice. */}
+          that anyone read it. */}
       <p className="text-xs text-muted-foreground" data-print-hide>
         {sentAt
           ? `A copy was emailed on ${isoDatePart(sentAt)}.`

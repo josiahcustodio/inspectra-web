@@ -8,7 +8,7 @@ import { SanitaryOrderView } from "@/components/SanitaryOrderView";
 // [REF: INSPECTION_CHECKLIST_VIEW]
 //
 // The single renderer for one inspection's recorded detail: its fact strip,
-// remarks, photo evidence and per-item checklist answers. The Inspections list
+// remarks and per-item checklist answers. The Inspections list
 // dialog and the establishment history modal both mount this component, so the
 // two views cannot drift apart the way duplicated copies of this logic have
 // before.
@@ -146,20 +146,6 @@ export function InspectionChecklistView({
         <div>
           <h4 className="font-bold text-slate-900 text-sm mb-2">Remarks</h4>
           <p className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3 whitespace-pre-wrap">{log.remarks}</p>
-        </div>
-      )}
-
-      {/* Photo evidence */}
-      {log.photo_evidence_url && (
-        <div>
-          <h4 className="font-bold text-slate-900 text-sm mb-2">Photo Evidence</h4>
-          <a href={log.photo_evidence_url} target="_blank" rel="noreferrer">
-            <img
-              src={log.photo_evidence_url}
-              alt="Inspection evidence"
-              className="rounded-lg max-h-64 w-auto border border-border"
-            />
-          </a>
         </div>
       )}
 
