@@ -143,6 +143,9 @@ async function handle(req: Request): Promise<Response> {
   // ── 3+. The privileged half ───────────────────────────────────────────────
   const admin = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
+    // The service key has no auth.uid(); the audit trigger (09_audit_trail.sql)
+    // reads this header instead, and only trusts it from the service role.
+    global: { headers: { "x-audit-actor": auth.user.id } },
   });
 
   // profiles carries the email, and profiles.id IS the auth uid — so this is

@@ -9,9 +9,9 @@ import { Masterlist } from "@/pages/Masterlist";
 import { MasterlistImport } from "@/pages/MasterlistImport";
 import { Settings } from "@/pages/Settings";
 import { Access } from "@/pages/Access";
+import { Audit } from "@/pages/Audit";
 import { AccountStatus } from "@/pages/AccountStatus";
 import { Login } from "@/pages/Login";
-import { Signup } from "@/pages/Signup";
 import { VerifyEmail } from "@/pages/VerifyEmail";
 import { ResetPassword } from "@/pages/ResetPassword";
 import { AuthGuard } from "@/components/AuthGuard";
@@ -33,13 +33,13 @@ const RoleRedirect = () => {
   if (needsMfa) return <Navigate to="/login" replace />;
   if (!emailVerified) return <Navigate to="/verify-email" replace />;
   if (role === 'admin') return <Navigate to="/admin/dashboard" replace />;
-  if (role === 'officer') return <Navigate to="/officer/dashboard" replace />;
+  if (role === 'department_head') return <Navigate to="/head/dashboard" replace />;
   // [REF: ROLE_REDIRECT_NON_STAFF]
-  // The two roles with no portal. Before these branches existed, a session
-  // holding either one fell through to the spinner at the bottom of this
-  // function and stayed there — which is what every new sign-up would have
-  // done once handle_new_user() started writing 'pending'.
-  if (role === 'pending' || role === 'owner') {
+  // The roles with no web portal: inspectors and owners work in the mobile
+  // app, pending accounts are not activated. Before these branches existed, a
+  // session holding one fell through to the spinner at the bottom of this
+  // function and stayed there.
+  if (role === 'pending' || role === 'owner' || role === 'officer') {
     return <Navigate to="/account" replace />;
   }
 
@@ -68,10 +68,9 @@ export const router = createBrowserRouter([
     path: "/login",
     Component: Login,
   },
-  {
-    path: "/signup",
-    Component: Signup,
-  },
+  // No /signup: staff accounts are created by an administrator, never by the
+  // visitor. The Supabase sign-up endpoint itself is still reachable, which is
+  // why handle_new_user() stamps every new account 'pending' (grants nothing).
   {
     path: "/verify-email",
     Component: VerifyEmail,
@@ -116,14 +115,18 @@ export const router = createBrowserRouter([
               // (profiles_update) and so is establishment_contacts, so an
               // officer would get a page whose every write fails.
               { path: "access", Component: Access },
+              // Admin branch only: audit_log_select is is_admin() in RLS.
+              { path: "audit", Component: Audit },
               { path: "settings", Component: Settings },
             ],
           }
         ],
       },
       {
-        path: "officer",
-        element: <AuthGuard allowedRoles={['officer']} />,
+        // Read-only portal. RLS (09_audit_trail.sql) denies this role every
+        // write, so the pages hide their edit controls on role === 'admin'.
+        path: "head",
+        element: <AuthGuard allowedRoles={['department_head']} />,
         children: [
           {
             element: <Layout />,
@@ -133,6 +136,7 @@ export const router = createBrowserRouter([
               { path: "inspections", Component: Inspections },
               { path: "gis-map", Component: GISMap },
               { path: "inspectors", Component: Inspectors },
+              { path: "masterlist", Component: Masterlist },
               { path: "settings", Component: Settings },
             ],
           }

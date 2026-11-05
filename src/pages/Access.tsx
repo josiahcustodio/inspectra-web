@@ -34,7 +34,7 @@ import { isoDatePart } from "@/lib/inspectionDates";
 // the provision-owner function (creating an auth user needs the service-role
 // key no client may hold).
 
-type Role = "admin" | "officer" | "pending" | "owner";
+type Role = "admin" | "department_head" | "officer" | "pending" | "owner";
 
 interface ProfileRow {
   id: string;
@@ -103,7 +103,7 @@ function chunk<T>(items: T[], size = 200): T[][] {
 // would hold a role whose label promises access it does not have. Owners are
 // created by approving a request above, which writes the role and the grant
 // together.
-const ASSIGNABLE: Role[] = ["pending", "officer"];
+const ASSIGNABLE: Role[] = ["pending", "officer", "department_head"];
 
 const ROLE_COPY: Record<Role, { label: string; hint: string; tone: string }> = {
   admin: {
@@ -111,9 +111,14 @@ const ROLE_COPY: Record<Role, { label: string; hint: string; tone: string }> = {
     hint: "Full access, including the masterlist importer",
     tone: "text-violet-700 bg-violet-50",
   },
+  department_head: {
+    label: "Department head",
+    hint: "Reads everything on this web portal, changes nothing",
+    tone: "text-indigo-700 bg-indigo-50",
+  },
   officer: {
     label: "Inspector",
-    hint: "Can inspect and read every establishment",
+    hint: "Records inspections in the mobile app; no web access",
     tone: "text-emerald-700 bg-emerald-50",
   },
   pending: {
@@ -148,7 +153,7 @@ export function Access() {
         supabase
           .from("profiles")
           .select("id, email, role")
-          .in("role", ["pending", "officer", "admin"])
+          .in("role", ["pending", "officer", "department_head", "admin"])
           .order("id")
           .range(from, to),
       );

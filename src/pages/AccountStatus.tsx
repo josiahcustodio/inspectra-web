@@ -48,7 +48,7 @@ export function AccountStatus() {
   // role-to-route map there is: it also owns the MFA and email-verification
   // branches, which a direct jump from here would skip.
   useEffect(() => {
-    if (role === "admin" || role === "officer") navigate("/", { replace: true });
+    if (role === "admin" || role === "department_head") navigate("/", { replace: true });
   }, [role, navigate]);
 
   if (isLoading || !session) {
@@ -59,7 +59,9 @@ export function AccountStatus() {
     );
   }
 
-  const isOwner = role === "owner";
+  // Inspectors and owners both work in the mobile app; the web portal is for
+  // administrators and department heads only.
+  const isOwner = role === "owner" || role === "officer";
 
   const handleCheckAgain = async () => {
     setChecking(true);
@@ -92,7 +94,11 @@ export function AccountStatus() {
           </h1>
 
           <p className="text-sm text-slate-600 mt-3 leading-relaxed">
-            {isOwner
+            {role === "officer"
+              ? "This web portal is for City Health Office administrators and " +
+                "department heads. Inspections are recorded in the Inspectra " +
+                "mobile app — sign in there with this same account."
+              : isOwner
               ? "This is the City Health Office staff portal. Your establishment's " +
                 "inspection results and any Sanitary Order are in the Inspectra " +
                 "mobile app — sign in there with this same email address and the " +

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -219,10 +219,7 @@ export function Login() {
             </form>
 
             <p className="text-center text-sm text-slate-500">
-              Don't have an account?{" "}
-              <Link to="/signup" className="text-primary font-medium hover:underline">
-                Sign up
-              </Link>
+              Accounts are issued by the City Health Office administrator.
             </p>
           </div>
           </>

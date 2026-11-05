@@ -3,15 +3,15 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
 // [REF: WEB_APP_ROLE]
-// Mirrors public.app_role (migration/sql/01_schema.sql). 'pending' and 'owner'
-// are not staff roles and have no dashboard: 'pending' is a new account nobody
-// has activated, 'owner' is an establishment's point person whose records live
-// in the mobile app. Both are routed to AccountStatus rather than into the
-// portal, because every RLS policy here denies them and the pages would render
-// as silently empty tables.
-export type AppRole = 'admin' | 'officer' | 'pending' | 'owner' | null;
+// Mirrors public.app_role (migration/sql/01_schema.sql). Only two roles have a
+// web portal: 'admin' (manages) and 'department_head' (read-only). 'officer'
+// and 'owner' belong to the mobile app, 'pending' is an account nobody has
+// activated. Those three are routed to AccountStatus rather than into the
+// portal (09_audit_trail.sql: RLS denies writes to department_head, and
+// everything to pending).
+export type AppRole = 'admin' | 'department_head' | 'officer' | 'pending' | 'owner' | null;
 
-const KNOWN_ROLES: readonly string[] = ['admin', 'officer', 'pending', 'owner'];
+const KNOWN_ROLES: readonly string[] = ['admin', 'department_head', 'officer', 'pending', 'owner'];
 
 interface AuthState {
   user: User | null;

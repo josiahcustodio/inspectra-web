@@ -10,11 +10,15 @@ import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModa
 import { PageStrip } from "@/components/PageStrip";
 import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { formatShortDate } from "@/lib/inspectionDates";
+import { useAuth } from "@/lib/useAuth";
 
 const PAGE_SIZE = 50;
 
 export function Establishments() {
   const { data, isLoading, error } = useCollection(COLLECTIONS.establishments, mapEstablishment);
+  // RLS already refuses a department head's writes; hiding the controls spares
+  // them a form whose every save fails.
+  const canEdit = useAuth().role === "admin";
   const establishments = data ?? [];
   const [barangayFilter, setBarangayFilter] = useState("all");
   const [page, setPage] = useState(1);
@@ -69,9 +73,11 @@ export function Establishments() {
           <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Establishments</h2>
           <p className="text-muted-foreground mt-1 text-sm font-medium">Manage all registered establishments</p>
         </div>
-        <Button onClick={() => handleOpenModal()} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-sm">
-          Add Establishment
-        </Button>
+        {canEdit && (
+          <Button onClick={() => handleOpenModal()} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-sm">
+            Add Establishment
+          </Button>
+        )}
       </div>
 
       <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
@@ -180,9 +186,11 @@ export function Establishments() {
                     </td>
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
-                        <Button variant="outline" size="icon" onClick={(e) => { e.stopPropagation(); handleOpenModal(establishment); }} className="h-8 w-8 border-border text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 shadow-sm" title="Edit Establishment">
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
+                        {canEdit && (
+                          <Button variant="outline" size="icon" onClick={(e) => { e.stopPropagation(); handleOpenModal(establishment); }} className="h-8 w-8 border-border text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 shadow-sm" title="Edit Establishment">
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

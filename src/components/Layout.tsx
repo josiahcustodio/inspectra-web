@@ -12,6 +12,7 @@ import {
   Map,
   Users,
   UserCog,
+  History,
   Settings as SettingsIcon,
   User,
   Menu,
@@ -29,17 +30,18 @@ import {
 
 // Paths here are deliberately relative — Layout prefixes them per role below,
 // so each destination is described once instead of once per role.
-// `adminOnly` hides a link from officers; the actual gate is the route map
-// (Masterlist Import is mounted only under the admin branch).
+// `adminOnly` hides a link from the department head; the actual gate is the
+// route map (those pages are mounted only under the admin branch).
 const baseNavItems: { path: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[] = [
   { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "establishments", label: "Establishments", icon: Building2 },
   { path: "inspections", label: "Inspections", icon: ClipboardCheck },
   { path: "gis-map", label: "GIS Map", icon: Map },
   { path: "inspectors", label: "Inspectors", icon: Users },
-  { path: "masterlist", label: "Masterlist", icon: Table2, adminOnly: true },
+  { path: "masterlist", label: "Masterlist", icon: Table2 },
   { path: "import", label: "Masterlist Import", icon: FileSpreadsheet, adminOnly: true },
   { path: "access", label: "Access", icon: UserCog, adminOnly: true },
+  { path: "audit", label: "Audit Trail", icon: History, adminOnly: true },
   { path: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -54,11 +56,11 @@ export function Layout() {
 
   // [REF: ROLE_NAV]
   //
-  // Admins and officers see the same six destinations under different path
-  // prefixes. This only builds the links: whether a role may actually open a
-  // route is decided by AuthGuard and the route map, never here — so adding an
-  // item to baseNavItems does not grant anyone access to it.
-  const rolePrefix = role === 'admin' ? '/admin' : '/officer';
+  // Admins and department heads see the shared destinations under different
+  // path prefixes. This only builds the links: whether a role may actually
+  // open a route is decided by AuthGuard and the route map, never here — so
+  // adding an item to baseNavItems does not grant anyone access to it.
+  const rolePrefix = role === 'admin' ? '/admin' : '/head';
   const navItems = baseNavItems
     .filter(item => !item.adminOnly || role === 'admin')
     .map(item => ({ ...item, path: `${rolePrefix}/${item.path}` }));

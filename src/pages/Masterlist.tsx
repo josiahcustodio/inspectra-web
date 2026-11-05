@@ -40,6 +40,7 @@ import { exportMasterlistToExcel } from "@/lib/masterlistExport";
 import { ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModal";
 import { PageStrip } from "@/components/PageStrip";
+import { useAuth } from "@/lib/useAuth";
 
 const PAGE_SIZE = 50;
 
@@ -98,6 +99,8 @@ export function Masterlist() {
   // reappears in a NEWER masterlist is also revived automatically by the
   // importer (newest-file-wins); this is the manual version of the same.
   const [delistBusy, setDelistBusy] = useState<string | null>(null);
+  // Delisting is a write; RLS refuses it for a department head anyway.
+  const canEdit = useAuth().role === "admin";
   const toggleDelisted = async (est: Establishment) => {
     const delisting = est.status !== "delisted";
     if (
@@ -486,18 +489,24 @@ export function Masterlist() {
                         <td className="py-2 px-3">
                           {/* stopPropagation: this button lives inside a row
                               whose click opens the history modal. */}
-                          <button
-                            type="button"
-                            disabled={delistBusy === est.id}
-                            onClick={(e) => { e.stopPropagation(); void toggleDelisted(est); }}
-                            className={`text-xs font-bold px-2 py-1 rounded-md border transition-colors disabled:opacity-50 ${
-                              est.status === "delisted"
-                                ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                                : "border-border text-slate-500 hover:bg-slate-100"
-                            }`}
-                          >
-                            {est.status === "delisted" ? "Restore" : "Delist"}
-                          </button>
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              disabled={delistBusy === est.id}
+                              onClick={(e) => { e.stopPropagation(); void toggleDelisted(est); }}
+                              className={`text-xs font-bold px-2 py-1 rounded-md border transition-colors disabled:opacity-50 ${
+                                est.status === "delisted"
+                                  ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                  : "border-border text-slate-500 hover:bg-slate-100"
+                              }`}
+                            >
+                              {est.status === "delisted" ? "Restore" : "Delist"}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-500">
+                              {est.status === "delisted" ? "Delisted" : "Active"}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );

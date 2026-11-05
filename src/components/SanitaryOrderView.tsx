@@ -6,6 +6,7 @@ import type { Establishment, InspectionLog } from "@/lib/models";
 import { isoDatePart } from "@/lib/inspectionDates";
 import { answerKind } from "@/components/InspectionChecklistView";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/useAuth";
 
 // [REF: SANITARY_ORDER_VIEW]
 //
@@ -83,6 +84,8 @@ export function SanitaryOrderView({ log, establishment }: SanitaryOrderViewProps
   // here rather than by invalidating a query this component does not own.
   const [sentAt, setSentAt] = useState<string | null>(log.email_sent_at ?? null);
   const [sending, setSending] = useState(false);
+  // send-sanitary-order refuses a department head server-side; don't offer it.
+  const canSend = useAuth().role === "admin";
 
   const emailCopy = async () => {
     setSending(true);
@@ -145,10 +148,12 @@ export function SanitaryOrderView({ log, establishment }: SanitaryOrderViewProps
       <div className="flex items-center justify-between" data-print-hide>
         <h4 className="font-bold text-slate-900 text-sm">Sanitary Order</h4>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={emailCopy} disabled={sending}>
-            <Mail className="w-4 h-4 mr-1.5" />
-            {sending ? "Sending…" : sentAt ? "Email copy again" : "Email copy"}
-          </Button>
+          {canSend && (
+            <Button variant="outline" size="sm" onClick={emailCopy} disabled={sending}>
+              <Mail className="w-4 h-4 mr-1.5" />
+              {sending ? "Sending…" : sentAt ? "Email copy again" : "Email copy"}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="w-4 h-4 mr-1.5" />
             Print / Save as PDF
