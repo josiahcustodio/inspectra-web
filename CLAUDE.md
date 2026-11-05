@@ -14,7 +14,7 @@ The site serves a strict Content-Security-Policy (details and rationale in
    `'self'` with no `unsafe-inline` — that is the policy's whole XSS value.
    All JS goes through the Vite bundle.
 2. **Loading from a new origin requires a CSP change first.** Allowed today:
-   Supabase (API/storage), `*.basemaps.cartocdn.com` (map tiles), Google Fonts
+   Supabase (API/storage), `tile.openstreetmap.org` (map tiles), Google Fonts
    (`fonts.googleapis.com` stylesheet, `fonts.gstatic.com` woff2), and `data:`
    images. Anything else (a CDN, an avatar host, a new tile provider) will be
    silently blocked in production — and works fine in local dev, so you won't

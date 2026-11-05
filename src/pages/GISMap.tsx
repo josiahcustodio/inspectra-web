@@ -264,12 +264,13 @@ export function GISMap() {
     const isSelected = selectedRef.current === name;
 
     let fillColor = "#94a3b8";
-    let fillOpacity = 0.08;
+    let fillOpacity = 0.04;
 
+    // Kept light so the roads on the basemap stay readable through the shading.
     if (count > 0) {
       const density = count / maxCount;
       fillColor = shadingEnabled ? riskColor(stats!) : colorOfBand("excellent");
-      fillOpacity = 0.25 + density * 0.4;
+      fillOpacity = 0.1 + density * 0.2;
     }
 
     return {
@@ -277,7 +278,7 @@ export function GISMap() {
       weight: isSelected ? 3 : hovered ? 2 : 1,
       opacity: 1,
       fillColor,
-      fillOpacity: isSelected ? Math.min(fillOpacity + 0.15, 0.9) : fillOpacity,
+      fillOpacity: isSelected ? fillOpacity + 0.05 : fillOpacity,
     };
   };
   // Read by the Leaflet handlers, same reasoning as selectedRef.
@@ -296,8 +297,9 @@ export function GISMap() {
       zoomControl: true,
     });
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+    // shortcut: OSM's public tile server has no SLA and limits heavy use, move to a keyed provider if traffic grows.
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
     }).addTo(map);
 

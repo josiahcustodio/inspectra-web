@@ -40,7 +40,7 @@ services:
       #                                  the Inter font stylesheet
       #   font-src   'self'            — permits self-hosting Inter later
       #              fonts.gstatic.com — Inter .woff2 files today
-      #   img-src    cartocdn          — Leaflet basemap tiles (GISMap.tsx)
+      #   img-src    openstreetmap     — Leaflet basemap tiles (GISMap.tsx)
       #              supabase.co       — inspection photo evidence (storage)
       #              data:             — TOTP QR code (Settings.tsx data: URL)
       #   connect-src supabase.co      — REST/auth API; wss: for realtime
@@ -59,7 +59,7 @@ services:
           script-src 'self';
           style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
           font-src 'self' https://fonts.gstatic.com;
-          img-src 'self' data: https://*.basemaps.cartocdn.com https://fwtgdgeiffnvqyrobixc.supabase.co;
+          img-src 'self' data: https://tile.openstreetmap.org https://fwtgdgeiffnvqyrobixc.supabase.co;
           connect-src 'self' https://fwtgdgeiffnvqyrobixc.supabase.co wss://fwtgdgeiffnvqyrobixc.supabase.co;
           frame-ancestors 'none';
           object-src 'none';

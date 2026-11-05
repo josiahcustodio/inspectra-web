@@ -24,7 +24,7 @@ row per header, path `/*` for all four:
 
 | Header | Value |
 |---|---|
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.basemaps.cartocdn.com https://fwtgdgeiffnvqyrobixc.supabase.co; connect-src 'self' https://fwtgdgeiffnvqyrobixc.supabase.co wss://fwtgdgeiffnvqyrobixc.supabase.co; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://tile.openstreetmap.org https://fwtgdgeiffnvqyrobixc.supabase.co; connect-src 'self' https://fwtgdgeiffnvqyrobixc.supabase.co wss://fwtgdgeiffnvqyrobixc.supabase.co; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'` |
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
@@ -46,7 +46,7 @@ Every source in the policy maps to something the app verifiably loads
 | `style-src 'unsafe-inline'` | inline styles | Radix UI, Leaflet, Recharts inject style attributes at runtime |
 | `style-src fonts.googleapis.com` | Inter stylesheet | `src/styles/fonts.css` `@import` |
 | `font-src 'self' fonts.gstatic.com` | Inter `.woff2` | loaded by the Google Fonts stylesheet; `'self'` is headroom so self-hosting Inter later doesn't silently break |
-| `img-src *.basemaps.cartocdn.com` | map tiles | `src/pages/GISMap.tsx` Leaflet tile layer |
+| `img-src tile.openstreetmap.org` | map tiles | `src/pages/GISMap.tsx` Leaflet tile layer |
 | `img-src …supabase.co` | photo evidence | `InspectionChecklistView.tsx` renders `photo_evidence_url` from Supabase Storage |
 | `img-src data:` | generated images | TOTP QR code in `Settings.tsx` (`QRCode.toDataURL`). Note: `blob:` is deliberately NOT allowed — nothing renders blob: images; the xlsx export's blob URL is a download `href`, which `img-src` does not govern |
 | `connect-src …supabase.co` + `wss:` | API traffic | supabase-js REST/auth/realtime |
