@@ -43,11 +43,9 @@ export interface Establishment {
   control_no: string | null;
   category_id: string | null;
   category: string | null;
-  // Optional GPS coordinates. Nothing captures these yet — no screen in either
-  // client writes them — so in practice they are absent on every record today.
-  // Nothing reads them either: the GIS map works at barangay level, resolving
-  // an establishment by its address rather than by a pin (see
-  // [REF: GIS_BARANGAY_AGGREGATION] in pages/GISMap.tsx).
+  // Optional GPS coordinates. No screen writes them yet; today they exist only
+  // on rows seeded by migration/seed_osm_fastfood.py. Read by the GIS pin
+  // layer ([REF: GIS_PINS] in pages/GISMap.tsx) and the mobile field map.
   latitude?: number | null;
   longitude?: number | null;
 

@@ -3,10 +3,9 @@
 // Barangay boundaries for Batangas City, plus the name matching that ties a
 // stored establishment record to one of them.
 //
-// The GIS map works at barangay level rather than plotting individual
-// establishments: no client writes latitude/longitude (see the note on
-// Establishment in models.ts), but every establishment carries a barangay
-// chosen from a fixed list. Boundaries are real PSA/PSGC 2019 polygons, not
+// The GIS map aggregates at barangay level (pins exist only for the few
+// establishments with coordinates, see models.ts): every establishment carries
+// a barangay chosen from a fixed list. Boundaries are real PSA/PSGC 2019 polygons, not
 // drawn approximations — see ATTRIBUTIONS.md.
 
 import boundaries from "@/lib/data/batangas_barangays.geojson.json";

@@ -28,13 +28,11 @@ import L from "leaflet";
 
 // [REF: GIS_BARANGAY_MODEL]
 //
-// The map works at barangay level, not at individual-establishment level.
-// Nothing writes latitude/longitude on an establishment (see models.ts), so
-// plotting one pin per business was never going to show anything — the page
-// rendered an empty map on every load. Every establishment does carry a
-// barangay, and the barangay boundaries are real PSA/PSGC polygons, so this
-// aggregates by barangay: click or search one, and its compliance breakdown
-// appears on the right.
+// The map aggregates at barangay level: every establishment carries a
+// barangay, and the boundaries are real PSA/PSGC polygons, so click or search
+// one and its compliance breakdown appears on the right. Establishments that
+// also carry latitude/longitude (seeded or set by the admin) get a pin on top
+// of the polygons ([REF: GIS_PINS]); most records still have none.
 
 /// One establishment as listed under its barangay. `score` is null when the
 /// establishment has never been inspected — that is a distinct state from a
@@ -66,6 +64,16 @@ interface BarangayStats {
   establishments: EstablishmentRow[];
 }
 
+/// One establishment with coordinates, drawn as a dot coloured by its latest score.
+interface EstablishmentPin {
+  name: string;
+  barangay: string;
+  lat: number;
+  lng: number;
+  score: number | null;
+  lastInspected: string;
+}
+
 function emptyStats(name: string): BarangayStats {
   return {
     name,
@@ -94,6 +102,7 @@ export function GISMap() {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<L.Map | null>(null);
   const geoLayerRef = useRef<L.GeoJSON | null>(null);
+  const pinLayerRef = useRef<L.LayerGroup | null>(null);
   const layersByNameRef = useRef<Map<string, L.Path>>(new Map());
 
   const [selected, setSelected] = useState<string | null>(null);
@@ -111,13 +120,14 @@ export function GISMap() {
   // barangay boundary its stored barangay name resolves to. An establishment
   // whose barangay matches no boundary is reported separately rather than being
   // attributed to a neighbouring one.
-  const { byBarangay, citywide, unmapped } = useMemo(() => {
+  const { byBarangay, citywide, unmapped, pins } = useMemo(() => {
     const byBarangay = new Map<string, BarangayStats>();
     const citywide = emptyStats("Batangas City");
     const unmapped = new Map<string, number>();
+    const pins: EstablishmentPin[] = [];
 
     if (!establishments || !inspectionLogs) {
-      return { byBarangay, citywide, unmapped };
+      return { byBarangay, citywide, unmapped, pins };
     }
 
     const latestByEst = new Map<string, any>();
@@ -188,13 +198,24 @@ export function GISMap() {
         cityCount++;
       }
 
+      const lastInspected = relativeInspectionAge(log?.inspection_date, "Never inspected");
       stats.establishments.push({
         id: est.id,
         name: est.business_name || "Unnamed establishment",
         score,
         inspector: log?.inspector_name ?? null,
-        lastInspected: relativeInspectionAge(log?.inspection_date, "Never inspected"),
+        lastInspected,
       });
+      if (typeof est.latitude === "number" && typeof est.longitude === "number") {
+        pins.push({
+          name: est.business_name || "Unnamed establishment",
+          barangay: name,
+          lat: est.latitude,
+          lng: est.longitude,
+          score,
+          lastInspected,
+        });
+      }
     }
 
     for (const [name, sum] of scoreSums) {
@@ -209,7 +230,7 @@ export function GISMap() {
       stats.establishments.sort((a, b) => (a.score ?? 101) - (b.score ?? 101));
     }
 
-    return { byBarangay, citywide, unmapped };
+    return { byBarangay, citywide, unmapped, pins };
   }, [establishments, inspectionLogs]);
 
   const maxCount = useMemo(
@@ -300,6 +321,11 @@ export function GISMap() {
 
     map.fitBounds(layer.getBounds(), { padding: [20, 20] });
 
+    // Own pane above the polygons, so a hovered barangay's bringToFront never
+    // covers the pins.
+    map.createPane("pins").style.zIndex = "450";
+    pinLayerRef.current = L.layerGroup().addTo(map);
+
     leafletMapRef.current = map;
     geoLayerRef.current = layer;
 
@@ -307,9 +333,35 @@ export function GISMap() {
       map.remove();
       leafletMapRef.current = null;
       geoLayerRef.current = null;
+      pinLayerRef.current = null;
       layersByNameRef.current.clear();
     };
   }, []);
+
+  // [REF: GIS_PINS]
+  // One dot per establishment with coordinates, coloured like the barangay
+  // panel. Rebuilt in place on every refetch; clicking a dot selects its barangay.
+  useEffect(() => {
+    const group = pinLayerRef.current;
+    if (!group) return;
+    group.clearLayers();
+    for (const p of pins) {
+      // textContent, not an HTML string: names come from the database.
+      const label = document.createElement("div");
+      label.textContent = `${p.name} · ${p.score === null ? UNSCORED_LABEL : `${p.score}%`} · ${p.lastInspected}`;
+      L.circleMarker([p.lat, p.lng], {
+        pane: "pins",
+        radius: 7,
+        color: "#ffffff",
+        weight: 2,
+        fillColor: ratingColor(p.score),
+        fillOpacity: 1,
+      })
+        .bindTooltip(label, { direction: "top", className: "font-bold" })
+        .on("click", () => setSelected(p.barangay))
+        .addTo(group);
+    }
+  }, [pins]);
 
   // Restyle in place when the counts, the selection or the shading toggle
   // change. Rebuilding the layer here would drop hover state and re-run
