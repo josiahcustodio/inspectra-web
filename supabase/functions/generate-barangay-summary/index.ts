@@ -1,14 +1,15 @@
 // [REF: AI_BARANGAY_SUMMARY]
 //
 // POST /functions/v1/generate-barangay-summary
-// Body (all optional): { "days": 90, "barangay": "Alangilan" }
-// Returns: { report, from, to, inspections, barangays }
+// Body (optional): { "days": 90 }
+// Returns: { narrative, from, to, city, barangays }
 //
-// Turns the inspection_logs of the last N days into a plain-text, barangay-level
+// Turns the inspection_logs of the last N days into the data for a barangay-level
 // compliance report: SQL-side data is aggregated here (counts, rating bands,
 // recurring failed checklist items), then ONE Claude call writes the narrative.
 // The hard numbers are computed in aggregate.ts, never by the model — the model
-// only phrases them and reads the free-text inspector notes.
+// only phrases them and reads the free-text inspector notes. The browser lays
+// both out as a PDF (src/lib/complianceReportPdf.ts).
 //
 // Security stance:
 //  - ANTHROPIC_API_KEY lives only in Supabase secrets; the browser never sees it.
@@ -62,7 +63,7 @@ async function fetchAllRows<T>(db: SupabaseClient, table: string, columns: strin
   }
 }
 
-function buildPrompt(detailed: BarangaySummary[], rest: BarangaySummary[], from: string, to: string): string {
+function buildPrompt(city: BarangaySummary, detailed: BarangaySummary[], rest: BarangaySummary[], from: string, to: string): string {
   // The model writes prose only. Every number it may cite is in this digest;
   // the system prompt forbids inventing anything beyond it.
   const digest = {
@@ -71,6 +72,15 @@ function buildPrompt(detailed: BarangaySummary[], rest: BarangaySummary[], from:
       "Scores are 0-100. Bands: 90-100 Excellent, 70-89 Very Satisfactory, " +
       "0-69 Satisfactory. CAUTION: despite the name, 'Satisfactory' is the " +
       "LOWEST band and means non-passing / high-risk in this system.",
+    city_wide: {
+      inspections: city.inspections,
+      establishments_inspected: city.establishments_inspected,
+      barangays: detailed.length + rest.length,
+      average_rating: city.average_rating,
+      bands: city.bands,
+      top_failed_items: city.top_failed_items,
+      lowest_rated: city.lowest_rated,
+    },
     barangays_detailed: detailed,
     barangays_other: rest.map((b) => ({
       name: b.name,
@@ -87,10 +97,49 @@ You will receive a JSON digest of inspection data. Write a report from it, follo
 
 - Use ONLY the numbers and notes in the digest. Never invent figures, establishment names, or trends the data does not show. If the data for a barangay is thin (few inspections, no notes), say so plainly instead of padding.
 - "Satisfactory" (0-69) is the LOWEST rating band in this system — treat those scores as failing / high-risk, never as acceptable.
-- Structure: a short city-wide OVERVIEW first, then one section per barangay in "barangays_detailed" (busiest first), then a single compact paragraph or list covering "barangays_other". For each detailed barangay: inspection coverage, average rating, recurring violations (the top failed checklist items), worst-performing establishments, and anything notable from the inspector notes.
-- End with a short RECOMMENDED ACTIONS section: which barangays need follow-up visits and why, grounded in the data.
-- Plain text only — no markdown symbols (no #, *, |). Use CAPITALISED headings and blank lines for structure, because the output is rendered verbatim in a plain-text viewer.
-- Open with the reporting window, and close with one line noting this is an AI-drafted summary for review by the sanitary office, not an official record.`;
+- Fill the fields of the required JSON format. The tables and charts around your prose already show every figure, so interpret the data rather than reciting it.
+- executive_summary is exactly five sentences for a busy health officer: overall compliance, where the risk is concentrated, the most common violations, the data's limits if any, and what to do next.
+- citywide_findings is one paragraph on the patterns across barangays.
+- barangays has one entry per barangay in "barangays_detailed", in the same order, with "name" copied exactly. Each assessment is at most 70 words: what stands out and anything notable from the inspector notes.
+- other_barangays is one compact paragraph covering "barangays_other", or an empty string if there are none.
+- recommended_actions lists 3 to 6 follow-ups grounded in the data, highest priority first.
+- Plain sentences only — no markdown symbols, because the text is typeset as-is into a PDF.`;
+
+// Every field is required so the PDF layout never has to handle a missing
+// section. Numbers are deliberately absent: those come from aggregate.ts.
+const NARRATIVE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["executive_summary", "citywide_findings", "barangays", "other_barangays", "recommended_actions"],
+  properties: {
+    executive_summary: { type: "string" },
+    citywide_findings: { type: "string" },
+    barangays: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "assessment"],
+        properties: { name: { type: "string" }, assessment: { type: "string" } },
+      },
+    },
+    other_barangays: { type: "string" },
+    recommended_actions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["priority", "barangay", "action", "rationale"],
+        properties: {
+          priority: { type: "string", enum: ["High", "Medium", "Low"] },
+          barangay: { type: "string" },
+          action: { type: "string" },
+          rationale: { type: "string" },
+        },
+      },
+    },
+  },
+};
 
 Deno.serve(async (req) => {
   // Without this the Edge Runtime turns any throw into a bodyless
@@ -118,7 +167,7 @@ async function handle(req: Request): Promise<Response> {
   const { data: auth } = await db.auth.getUser();
   if (!auth?.user) return json(401, { error: "Sign in to generate reports." });
 
-  let body: { days?: number; barangay?: string } = {};
+  let body: { days?: number } = {};
   try {
     if (req.headers.get("content-type")?.includes("application/json")) body = await req.json();
   } catch {
@@ -139,18 +188,13 @@ async function handle(req: Request): Promise<Response> {
     fetchAllRows<EstablishmentRow>(db, "establishments", "id, business_name, barangay, address"),
   ]);
 
-  let summaries = aggregate(logs, establishments);
-  if (body.barangay) {
-    const wanted = body.barangay.trim().toLowerCase();
-    summaries = summaries.filter((b) => b.name.toLowerCase() === wanted);
-  }
+  const summaries = aggregate(logs, establishments);
   if (summaries.length === 0) {
-    return json(422, {
-      error: body.barangay
-        ? `No inspections found for "${body.barangay}" in the last ${days} days.`
-        : `No inspections recorded in the last ${days} days.`,
-    });
+    return json(422, { error: `No inspections recorded in the last ${days} days.` });
   }
+  // With no establishments every log lands in one bucket: the city-wide totals,
+  // averaged over raw scores rather than the barangays' rounded averages.
+  const [city] = aggregate(logs, []);
 
   const detailed = summaries.slice(0, DETAILED_BARANGAYS);
   const rest = summaries.slice(DETAILED_BARANGAYS);
@@ -161,27 +205,34 @@ async function handle(req: Request): Promise<Response> {
     // more than writing quality (also drop betas/fallbacks then — Haiku has no
     // safety-classifier refusals to fall back from).
     model: "claude-opus-5",
-    max_tokens: 8000,
+    max_tokens: 16000,
     // Server-side fallback: if a safety classifier ever declines (it shouldn't
     // for sanitation data, but the failure mode is a blank report), the API
     // retries on the recommended fallback model inside the same call.
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
+    output_config: { format: { type: "json_schema", schema: NARRATIVE_SCHEMA } },
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildPrompt(detailed, rest, from.toISOString(), to.toISOString()) }],
+    messages: [{ role: "user", content: buildPrompt(city, detailed, rest, from.toISOString(), to.toISOString()) }],
   });
 
   if (response.stop_reason === "refusal") {
     return json(502, { error: "The AI declined to generate this report. Please try again or contact the administrator." });
   }
-  const report = response.content.find((b) => b.type === "text")?.text;
-  if (!report) return json(502, { error: "The AI returned an empty report. Please try again." });
+  // Cut-off output is unparseable JSON, not just a shorter report.
+  if (response.stop_reason === "max_tokens") {
+    return json(502, { error: "The AI report ran too long. Please try again." });
+  }
+  const text = response.content.find((b) => b.type === "text")?.text;
+  if (!text) return json(502, { error: "The AI returned an empty report. Please try again." });
 
   return json(200, {
-    report,
+    // Not "report": dashboards still open on the old bundle render that field
+    // directly, and an object there would crash them instead of showing nothing.
+    narrative: JSON.parse(text),
     from: from.toISOString(),
     to: to.toISOString(),
-    inspections: logs.length,
-    barangays: summaries.length,
+    city,
+    barangays: summaries,
   });
 }

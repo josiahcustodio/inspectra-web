@@ -70,4 +70,11 @@ Deno.test("aggregate counts, averages, violations and the Unknown bucket", () =>
   assertEquals(unknown.inspections, 1);
   assertEquals(unknown.bands.unscored, 1);
   assertEquals(unknown.average_rating, null);
+
+  // index.ts gets its city-wide totals this way.
+  const [city] = aggregate(logs, []);
+  assertEquals(city.inspections, 3);
+  assertEquals(city.establishments_inspected, 2);
+  assertEquals(city.average_rating, 80);
+  assertEquals(city.top_failed_items, [{ item: "Waste segregation", failures: 2 }]);
 });
