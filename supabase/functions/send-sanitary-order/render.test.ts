@@ -159,11 +159,7 @@ Deno.test("an unnumbered order prints a blank line, not 'null'", () => {
   assertEquals(html.includes("null"), false);
 });
 
-Deno.test("the body carries no signature image URLs", () => {
-  // Stored signature URLs are ten-year capability URLs. Mailing one outside
-  // the organisation hands over a permanent link to a government officer's
-  // signature image; the signed acknowledgment the recipient already holds is
-  // the evidence of service.
+Deno.test("the body carries no images", () => {
   const html = renderHtml(order(), est());
   assertEquals(html.includes("<img"), false);
   assertEquals(html.includes("signatures/"), false);

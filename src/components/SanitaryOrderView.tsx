@@ -276,16 +276,13 @@ export function SanitaryOrderView({ log, establishment }: SanitaryOrderViewProps
         <div className="grid grid-cols-2 gap-6 mb-6">
           <div>
             <p className="text-xs font-semibold mb-1">Delivered by:</p>
-            <div className="h-12" />
-            <p className="border-t border-slate-400 pt-1 text-xs">
+            <p className="text-xs">
               {log.inspector_name || BLANK}
             </p>
           </div>
           <div>
             <p className="text-xs font-semibold mb-1">Received by:</p>
-            {/* Blank on purpose: signatures are wet ink on the printed copy. */}
-            <div className="h-12" />
-            <p className="border-t border-slate-400 pt-1 text-xs">
+            <p className="text-xs">
               {log.received_by_name || BLANK}
             </p>
           </div>

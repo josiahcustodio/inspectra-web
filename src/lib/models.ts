@@ -113,14 +113,6 @@ export interface InspectionLog {
   remarks: string | null;
   inspection_date: string | null;
   photo_evidence_url: string | null;
-  // The inspector's sign-off, captured on the phone's signature pad and
-  // uploaded to Storage at signatures/{establishment_id}/{log_id}.png. This is
-  // a download URL, so it can be fetched directly; the hash is what proves the
-  // image is the one captured at the inspection. Written by the Flutter client
-  // (see signaturePath in its sync_service.dart); absent on any log recorded
-  // before sign-off existed, and on one whose upload has not caught up yet.
-  signature_url?: string | null;
-  signature_sha256?: string | null;
 
   // ── Sanitary Order (CHO-ESD-FR-04) ─────────────────────────────────────
   // Present only on an inspection that found at least one defect. Written by
@@ -136,15 +128,9 @@ export interface InspectionLog {
   so_issued_at?: string | null;
   time_given?: string | null;
   deadline?: string | null; // "YYYY-MM-DD" — a calendar day, not an instant
-  // The form's "Received by" line: the owner or point person acknowledging
-  // service on site. This is what makes the notice served — an emailed copy
-  // is a convenience afterwards. Stored at
-  // signatures/{establishment_id}/{log_id}_received.png, a DIFFERENT object
-  // from `signature_url` above ("Delivered by"); sharing one would overwrite
-  // the inspector's sign-off and break its sha256 pairing.
+  // The form's "Received by" line: the name of the owner or point person
+  // acknowledging service on site.
   received_by_name?: string | null;
-  received_signature_url?: string | null;
-  received_signature_sha256?: string | null;
   // Stamped by the delivery function, server-side. Null means "not emailed",
   // which is also the state of every order issued before delivery existed.
   email_sent_at?: string | null;

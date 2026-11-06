@@ -182,11 +182,7 @@ export function renderHtml(order: OrderRow, est: EstablishmentRow): string {
   const address = addressLine(est);
 
   // Inline styles throughout: email clients strip <style> blocks and none of
-  // them support a stylesheet. Signature images are deliberately NOT embedded
-  // — the stored URLs are ten-year capability URLs, and mailing one outside
-  // the organisation hands over a permanent link to a government officer's
-  // signature image. The signed acknowledgment the recipient already holds is
-  // the evidence of service; this is a reference copy.
+  // them support a stylesheet. The order carries names only, no images.
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#000;max-width:720px">
   <div style="font-size:10px;color:#666;margin-bottom:16px">
     Code: CHO-ESD-FR-04 &middot; Effectivity Date: January 1, 2024 &middot; Revision No: 01

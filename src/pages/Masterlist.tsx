@@ -68,9 +68,6 @@ interface MasterlistRow {
   sssrExport: number | string | null;
   remarks: string | null;
   remarksColor: string | null; // rating colour for live remarks, null for fallbacks
-  /** The inspector's sign-off from the latest inspection, embedded into the
-   *  Date Inspected cell of the Excel export. */
-  signatureUrl: string | null;
   /** True when dateInspected/remarks came from the imported spreadsheet
    *  rather than a real inspection — rendered muted so nobody mistakes a
    *  typed-in "Satisfactory" from last year's Excel for a live result. */
@@ -164,7 +161,6 @@ export function Masterlist() {
             sssrExport: log.percentage_rating,
             remarks: ratingLabel(log.percentage_rating),
             remarksColor: ratingColor(log.percentage_rating),
-            signatureUrl: log.signature_url ?? null,
             fromImport: false,
           };
         }
@@ -183,7 +179,6 @@ export function Masterlist() {
             sssrExport: null,
             remarks: log.remarks,
             remarksColor: null,
-            signatureUrl: log.signature_url ?? null,
             fromImport: false,
           };
         }
@@ -196,7 +191,6 @@ export function Masterlist() {
           sssrExport: est.import_sssr ?? null,
           remarks: est.import_remarks ?? null,
           remarksColor: null,
-          signatureUrl: null,
           fromImport: Boolean(est.import_date_inspected || est.import_remarks || est.import_sssr),
         };
       })
@@ -282,7 +276,6 @@ export function Masterlist() {
           dateInspected: r.dateInspectedExport,
           sssr: r.sssrExport,
           remarks: r.remarks,
-          signatureUrl: r.signatureUrl,
         })),
         {
           // The Category column only ships when the Settings toggle says so:
@@ -293,18 +286,7 @@ export function Masterlist() {
         },
       );
 
-      if (result.signaturesFailed > 0) {
-        // The file was still written — say what is missing from it rather than
-        // let the admin discover a blank cell later.
-        toast.warning(
-          `Exported ${result.rows} rows with ${result.signaturesEmbedded} signatures. ` +
-            `${result.signaturesFailed} could not be downloaded and are missing from the file.`,
-        );
-      } else if (result.signaturesEmbedded > 0) {
-        toast.success(`Exported ${result.rows} rows, ${result.signaturesEmbedded} with signatures.`);
-      } else {
-        toast.success(`Exported ${result.rows} rows.`);
-      }
+      toast.success(`Exported ${result.rows} rows.`);
     } catch (err) {
       toast.error("Couldn't build the Excel file. Check your connection and try again.");
       console.error("[Masterlist] export failed", err);

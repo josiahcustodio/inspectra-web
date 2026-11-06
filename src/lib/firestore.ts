@@ -105,8 +105,6 @@ export const mapInspectionLog = (id: string, data: any): InspectionLog => ({
   remarks: data.remarks ?? null,
   inspection_date: data.inspection_date ?? null,
   photo_evidence_url: data.photo_evidence_url ?? null,
-  signature_url: data.signature_url ?? null,
-  signature_sha256: data.signature_sha256 ?? null,
   // Sanitary Order. The spread above already carries these, so these lines
   // are the same belt-and-braces as the rest: they make the declared `| null`
   // honest for a row served without the columns (a log written before the
@@ -116,8 +114,6 @@ export const mapInspectionLog = (id: string, data: any): InspectionLog => ({
   time_given: data.time_given ?? null,
   deadline: data.deadline ?? null,
   received_by_name: data.received_by_name ?? null,
-  received_signature_url: data.received_signature_url ?? null,
-  received_signature_sha256: data.received_signature_sha256 ?? null,
   email_sent_at: data.email_sent_at ?? null,
   results: Array.isArray(data.results) ? data.results : [],
 });

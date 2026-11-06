@@ -6,8 +6,8 @@
 //
 // Emails a reference copy of one Sanitary Order to the establishment's point
 // person. This is a CONVENIENCE, not the service of notice: the order is served
-// on site and acknowledged by the recipient's signature on the phone, which is
-// what `received_signature_url` records. The only delivery claim this function
+// on site and the recipient's name is recorded in `received_by_name`. The only
+// delivery claim this function
 // makes is `email_sent_at` — that a copy was sent, never that anyone read it.
 //
 // Why this exists instead of an owner login: the recipient needs no account to

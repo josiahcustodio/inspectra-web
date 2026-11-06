@@ -17,7 +17,7 @@ const LEGAL = {
     title: "Privacy Policy",
     body: [
       "Inspectra is operated by the Batangas City Health Office (CHO) to record sanitary inspections of business establishments.",
-      "What we collect: your account email, name and role; inspection records you create (establishment details, checklist answers, scores, photos and signatures); and an audit trail of changes made under your account.",
+      "What we collect: your account email, name and role; inspection records you create (establishment details, checklist answers, scores and the names on each record); and an audit trail of changes made under your account.",
       "Why: to issue and track sanitary permits and sanitary orders, and to keep an accountable record of every inspection, as required of the CHO under P.D. 856 (Code on Sanitation of the Philippines).",
       "Who sees it: CHO administrators and inspectors with an issued account. Sanitary order copies are emailed only to the establishment's point person.",
       "Retention: inspection records are kept as official CHO records. Accounts are removed by the administrator when access ends.",
