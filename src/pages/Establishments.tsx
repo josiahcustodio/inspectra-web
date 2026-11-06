@@ -21,17 +21,23 @@ export function Establishments() {
   const canEdit = useAuth().role === "admin";
   const establishments = data ?? [];
   const [barangayFilter, setBarangayFilter] = useState("all");
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
   // Compared through canonicalBarangay so old raw spellings match the dropdown,
   // same as the masterlist. Sorted because the snapshot has no fixed order, and
   // pages cut from an unordered list would repeat or skip records.
+  const needle = search.trim().toLowerCase();
   const filtered = useMemo(
     () =>
       (data ?? [])
         .filter((e) => barangayFilter === "all" || canonicalBarangay(barangayOfEstablishment(e)) === barangayFilter)
+        .filter((e) =>
+          !needle ||
+          [e.business_name, e.owner_name, e.business_permit_no, e.sanitary_permit_no]
+            .filter(Boolean).join(" ").toLowerCase().includes(needle))
         .sort((a, b) => a.business_name.localeCompare(b.business_name)),
-    [data, barangayFilter],
+    [data, barangayFilter, needle],
   );
 
   const barangayOptions = useMemo(() => {
@@ -81,6 +87,13 @@ export function Establishments() {
       </div>
 
       <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search name, owner, permit no.…"
+          className="w-72 text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900"
+        />
         <select
           aria-label="Filter by barangay"
           value={barangayFilter}
@@ -179,7 +192,7 @@ export function Establishments() {
                       {establishment.owner_name || <span className="text-slate-400">N/A</span>}
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-700 font-medium">
-                      {establishment.sanitary_permit_no || <span className="text-slate-400">N/A</span>}
+                      {establishment.business_permit_no || establishment.sanitary_permit_no || <span className="text-slate-400">N/A</span>}
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-600 font-medium hidden md:table-cell">
                       {establishment.created_at ? formatShortDate(establishment.created_at) : <span className="text-slate-400">N/A</span>}
