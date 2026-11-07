@@ -79,6 +79,8 @@ export function Dashboard() {
     }
 
     for (const log of inspectionLogs) {
+      // Visited counts as inspected even before a rating lands.
+      if (log.establishment_id) inspectedEstablishments.add(log.establishment_id);
       const score = log.percentage_rating;
       if (score === null || score === undefined) continue;
 
@@ -87,7 +89,6 @@ export function Dashboard() {
 
       bandCounts[ratingBand(score)]++;
 
-      if (log.establishment_id) inspectedEstablishments.add(log.establishment_id);
       const brgy = log.establishment_id ? estToBrgy.get(log.establishment_id) : null;
       if (!brgy) continue;
 
@@ -147,7 +148,10 @@ export function Dashboard() {
 
   // Zeroes while the tables download read as "no data", so hold a spinner
   // until both snapshots exist, and say so when a read failed.
-  if (!establishments || !inspectionLogs) {
+  // A failed FIRST load leaves both as [] (useCollection keeps "nothing"),
+  // which must read as the error, not as a city with zero inspections.
+  const neverLoaded = loadError && !establishments?.length && !inspectionLogs?.length;
+  if (!establishments || !inspectionLogs || neverLoaded) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-center">
         {loadError ? (

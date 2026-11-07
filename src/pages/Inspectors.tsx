@@ -232,7 +232,8 @@ export function Inspectors() {
       today: scoped.filter((l) => isoDatePart(l.inspection_date) === todayKey).length,
       barangays: brgys.size,
       establishments: ests.size,
-      perWeek: Math.round((scoped.length / spanDays) * 7 * 10) / 10,
+      // Meaningless below a week: two inspections today would read as 14/wk.
+      perWeek: spanDays < 7 ? null : Math.round((scoped.length / spanDays) * 7 * 10) / 10,
     };
   };
   const summaries = useMemo(
@@ -544,7 +545,7 @@ export function Inspectors() {
                     </div>
                     <div className="px-2">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Avg / wk</p>
-                      <p className="text-xl font-black text-primary tabular-nums">{s.perWeek}</p>
+                      <p className="text-xl font-black text-primary tabular-nums">{s.perWeek ?? "—"}</p>
                       <p className="text-xs text-muted-foreground font-medium">Inspections</p>
                     </div>
                   </div>

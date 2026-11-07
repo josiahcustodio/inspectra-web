@@ -25,10 +25,12 @@ export interface CollectionState<T> {
 // that always needs its table reads exactly as before; pass false to keep the
 // channel closed until the UI that depends on it actually exists — a modal
 // that has never been opened should not be holding a live query open.
-// Last snapshot per table, kept for the life of the tab. Every portal page
-// reads establishments, and without this each navigation re-downloaded all
-// 5,000+ rows and showed zeroes until they arrived. A page now renders the
+// Last snapshot per (user, table), kept for the life of the tab. Every portal
+// page reads establishments, and without this each navigation re-downloaded
+// all 5,000+ rows and showed zeroes until they arrived. A page now renders the
 // previous snapshot at once and the refetch below replaces it when it lands.
+// Keyed by user so a sign-in on the same tab never starts from someone
+// else's rows.
 const lastRows = new Map<string, any[]>();
 
 export function useCollection<T>(
@@ -43,8 +45,9 @@ export function useCollection<T>(
   // object, avoids a teardown/resubscribe race and a full re-download each
   // refresh.
   const userId = user?.id ?? null;
+  const cacheKey = `${userId}:${path}`;
   const [state, setState] = useState<CollectionState<T>>(() => {
-    const cached = lastRows.get(path);
+    const cached = lastRows.get(cacheKey);
     return cached
       ? { data: cached.map((r) => map(r.id, r)), isLoading: true, error: null }
       : { data: undefined, isLoading: true, error: null };
@@ -74,7 +77,7 @@ export function useCollection<T>(
       try {
         const rows = await fetchAllRows(path);
         if (cancelled) return;
-        lastRows.set(path, rows);
+        lastRows.set(cacheKey, rows);
         setState({
           data: rows.map((r) => mapRef.current(r.id, r)),
           isLoading: false,
