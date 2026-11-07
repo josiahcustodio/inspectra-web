@@ -53,8 +53,6 @@ function inWindow(logs: InspectionLog[], since: string | null, before: string | 
 interface InspectorRow {
   id: string;
   name: string;
-  /** Directory ID, or where this inspector was found when not in the directory. */
-  subtitle: string;
   /** Every log this inspector wrote, whatever the period. */
   logs: InspectionLog[];
 }
@@ -120,7 +118,7 @@ export function Inspectors() {
 
     for (const d of data ?? []) {
       if (d.email) seenEmails.add(d.email.trim().toLowerCase());
-      merged.push({ id: d.id, name: d.name, subtitle: d.inspectorId, logs: claim(d.name, d.email)?.logs ?? [] });
+      merged.push({ id: d.id, name: d.name, logs: claim(d.name, d.email)?.logs ?? [] });
     }
 
     // Registered mobile accounts that aren't in the directory. Officers
@@ -134,14 +132,13 @@ export function Inspectors() {
       merged.push({
         id: `profile:${p.id}`,
         name: s?.name ?? p.email.split("@")[0],
-        subtitle: "Registered account",
         logs: s?.logs ?? [],
       });
     }
 
     // Inspectors who only exist as names on submitted logs.
     for (const [key, s] of byName) {
-      merged.push({ id: `log:${key}`, name: s.name, subtitle: "From inspection records", logs: s.logs });
+      merged.push({ id: `log:${key}`, name: s.name, logs: s.logs });
     }
 
     return merged;
@@ -176,11 +173,6 @@ export function Inspectors() {
     };
     return new Map(inspectors.map((i) => [i.id, summarize(i)] as const));
   }, [inspectors, since, periodSpec.days, todayKey, barangayOf]);
-
-  const periodInspections = useMemo(
-    () => inWindow(inspectors.flatMap((i) => i.logs), since).length,
-    [inspectors, since],
-  );
 
   // [REF: INSPECTOR_DETAILS]
   // One inspector's inspections, every period, with a barangay filter and an
@@ -236,18 +228,6 @@ export function Inspectors() {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="p-5 bg-white rounded-xl">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Inspectors</p>
-          <h3 className="font-black text-slate-900 text-3xl leading-none tabular-nums">{inspectors.length}</h3>
-        </Card>
-        <Card className="p-5 bg-white rounded-xl">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Inspections · {periodSpec.label}</p>
-          <h3 className="font-black text-primary text-3xl leading-none tabular-nums">{periodInspections}</h3>
-        </Card>
-      </div>
-
       <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Field Inspectors Directory</p>
 
       {/* Inspector cards */}
@@ -289,13 +269,12 @@ export function Inspectors() {
                 aria-haspopup="dialog"
                 className="text-left bg-white rounded-xl border border-border shadow-sm hover:shadow-md hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 transition-all p-5"
               >
-                <div className="flex gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0">
                   <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
                     <User className="w-6 h-6 text-primary" />
                   </div>
                   <div className="min-w-0">
                     <h3 className="font-bold text-slate-900 text-lg leading-tight truncate" title={inspector.name}>{inspector.name}</h3>
-                    <p className="text-sm text-muted-foreground font-medium truncate">{inspector.subtitle}</p>
                   </div>
                 </div>
 
