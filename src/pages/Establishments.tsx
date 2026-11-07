@@ -2,20 +2,33 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Building2, Edit2 } from "lucide-react";
 import { useCollection } from "@/lib/useCollection";
-import { COLLECTIONS, mapEstablishment } from "@/lib/firestore";
+import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/firestore";
 import type { Establishment } from "@/lib/models";
 import { useMemo, useState } from "react";
 import { AddEstablishmentModal } from "@/components/AddEstablishmentModal";
 import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModal";
 import { PageStrip } from "@/components/PageStrip";
 import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
-import { formatShortDate } from "@/lib/inspectionDates";
+import { byNewestFirst, formatShortDate } from "@/lib/inspectionDates";
+import { UNSCORED_COLOR, ratingBand, ratingColor } from "@/lib/ratingScale";
 import { useAuth } from "@/lib/useAuth";
 
 const PAGE_SIZE = 50;
 
 export function Establishments() {
   const { data, isLoading, error } = useCollection(COLLECTIONS.establishments, mapEstablishment);
+  const { data: logs } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
+
+  // Newest inspection per establishment, for the date and compliance columns.
+  const latestLog = useMemo(() => {
+    const m = new Map<string, { inspection_date: string | null; percentage_rating: number | null }>();
+    for (const log of logs ?? []) {
+      if (!log.establishment_id) continue;
+      const prev = m.get(log.establishment_id);
+      if (!prev || byNewestFirst(log, prev) < 0) m.set(log.establishment_id, log);
+    }
+    return m;
+  }, [logs]);
   // RLS already refuses a department head's writes; hiding the controls spares
   // them a form whose every save fails.
   const canEdit = useAuth().role === "admin";
@@ -135,10 +148,10 @@ export function Establishments() {
               <thead className="sticky top-0 bg-white z-10 shadow-sm border-b border-border">
                 <tr>
                   <th className="py-3 px-6 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Establishment</th>
-                  <th className="py-3 px-6 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Category</th>
                   <th className="py-3 px-6 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Owner</th>
                   <th className="py-3 px-6 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Permit No.</th>
-                  <th className="py-3 px-6 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase hidden md:table-cell">Reg. Date</th>
+                  <th className="py-3 px-6 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase hidden md:table-cell">Inspection Date</th>
+                  <th className="py-3 px-6 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Compliance</th>
                   <th className="py-3 px-6 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase text-right">Actions</th>
                 </tr>
               </thead>
@@ -179,15 +192,6 @@ export function Establishments() {
                         <span className="sr-only">— press Enter to view inspection history</span>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-sm text-slate-600 font-medium">
-                      {establishment.category || establishment.category_id ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
-                          {establishment.category || establishment.category_id}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
                     <td className="py-4 px-6 text-sm text-slate-700 font-medium">
                       {establishment.owner_name || <span className="text-slate-400">N/A</span>}
                     </td>
@@ -195,7 +199,32 @@ export function Establishments() {
                       {establishment.business_permit_no || establishment.sanitary_permit_no || <span className="text-slate-400">N/A</span>}
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-600 font-medium hidden md:table-cell">
-                      {establishment.created_at ? formatShortDate(establishment.created_at) : <span className="text-slate-400">N/A</span>}
+                      {latestLog.get(establishment.id)?.inspection_date
+                        ? formatShortDate(latestLog.get(establishment.id)!.inspection_date)
+                        : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="py-4 px-6">
+                      {(() => {
+                        const score = latestLog.get(establishment.id)?.percentage_rating ?? null;
+                        // The lowest band is a failing inspection in CHO's
+                        // terms, so it reads "Fail" here rather than "Satisfactory".
+                        const label = score === null ? "Not yet"
+                          : ratingBand(score) === "excellent" ? "Excellent"
+                          : ratingBand(score) === "verySatisfactory" ? "Very Satisfactory" : "Fail";
+                        const color = score === null ? UNSCORED_COLOR : ratingColor(score);
+                        return (
+                          <span
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap"
+                            style={{
+                              backgroundColor: `color-mix(in srgb, ${color} 15%, transparent)`,
+                              color,
+                              borderColor: `color-mix(in srgb, ${color} 30%, transparent)`,
+                            }}
+                          >
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">

@@ -158,6 +158,19 @@ export function GISMap() {
     for (const est of establishments) {
       const raw = barangayOfEstablishment(est);
       const name = canonicalBarangay(raw);
+      const log = latestByEst.get(est.id);
+      const score = typeof log?.percentage_rating === "number" ? log.percentage_rating : null;
+      const band = score === null ? "notInspected" : ratingBand(score);
+
+      // Citywide counts every establishment on the masterlist, so its total
+      // matches the other pages; one that cannot be placed on a boundary is
+      // still counted here, just not in any barangay.
+      citywide.total++;
+      citywide[band]++;
+      if (score !== null) {
+        citySum += score;
+        cityCount++;
+      }
 
       if (!name) {
         const label = raw?.trim() || "(no barangay recorded)";
@@ -171,34 +184,13 @@ export function GISMap() {
         byBarangay.set(name, stats);
       }
 
-      const log = latestByEst.get(est.id);
-      const score = typeof log?.percentage_rating === "number" ? log.percentage_rating : null;
-
       stats.total++;
-      citywide.total++;
-
-      if (score === null) {
-        stats.notInspected++;
-        citywide.notInspected++;
-      } else {
-        const band = ratingBand(score);
-        if (band === "excellent") {
-          stats.excellent++;
-          citywide.excellent++;
-        } else if (band === "verySatisfactory") {
-          stats.verySatisfactory++;
-          citywide.verySatisfactory++;
-        } else {
-          stats.satisfactory++;
-          citywide.satisfactory++;
-        }
-
+      stats[band]++;
+      if (score !== null) {
         const sum = scoreSums.get(name) ?? { total: 0, count: 0 };
         sum.total += score;
         sum.count++;
         scoreSums.set(name, sum);
-        citySum += score;
-        cityCount++;
       }
 
       const lastInspected = relativeInspectionAge(log?.inspection_date, "Never inspected");
