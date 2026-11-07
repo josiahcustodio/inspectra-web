@@ -139,20 +139,23 @@ const BY_NORMALIZED = new Map<string, string>(
 /// real boundary, so "Poblacion 099" still comes back unmapped.
 const POBLACION_PATTERN = /^poblaci\w*\s*0*(\d+)$/;
 
+/// One normalised key -> official name: alias, then the numbered-poblacion
+/// rule, then the boundary set itself. Shared by the whole-value path and the
+/// address walk below, so "Poblacion 022" resolves wherever it appears.
+function resolveKey(key: string): string | null {
+  const alias = BARANGAY_ALIASES[key];
+  if (alias) return alias;
+  const poblacion = POBLACION_PATTERN.exec(key);
+  if (poblacion) return BY_NORMALIZED.get(`barangay ${Number(poblacion[1])}`) ?? null;
+  return BY_NORMALIZED.get(key) ?? null;
+}
+
 export function canonicalBarangay(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const key = normalizeBarangay(raw);
   if (!key) return null;
 
-  const alias = BARANGAY_ALIASES[key];
-  if (alias) return alias;
-
-  const poblacion = POBLACION_PATTERN.exec(key);
-  if (poblacion) {
-    return BY_NORMALIZED.get(`barangay ${Number(poblacion[1])}`) ?? null;
-  }
-
-  const direct = BY_NORMALIZED.get(key);
+  const direct = resolveKey(key);
   if (direct) return direct;
 
   // Last resort: the value is a whole address rather than a barangay, with the
@@ -171,7 +174,7 @@ export function canonicalBarangay(raw: string | null | undefined): string | null
     for (const part of parts) {
       const partKey = normalizeBarangay(part);
       if (!partKey) continue;
-      const hit = BARANGAY_ALIASES[partKey] ?? BY_NORMALIZED.get(partKey);
+      const hit = resolveKey(partKey);
       if (hit) found = hit;
     }
     if (found) return found;
