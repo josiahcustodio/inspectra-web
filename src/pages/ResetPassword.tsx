@@ -20,6 +20,9 @@ export function ResetPassword() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const tokenHash = params.get("token_hash");
+  // Invite emails (supabase/templates/invite.html) land here too: same page,
+  // same token_hash exchange, different OTP type.
+  const otpType = params.get("type") === "invite" ? "invite" : "recovery";
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
@@ -42,7 +45,7 @@ export function ResetPassword() {
     setIsLoading(true);
     try {
       if (!verified.current) {
-        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash!, type: "recovery" });
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash!, type: otpType });
         if (error) throw error;
         verified.current = true;
       }
@@ -64,7 +67,7 @@ export function ResetPassword() {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       await supabase.auth.signOut();
-      toast.success("Password updated. Sign in with your new password.");
+      toast.success(otpType === "invite" ? "Password set. Sign in to continue." : "Password updated. Sign in with your new password.");
       navigate("/login", { replace: true });
     } catch (err: any) {
       toast.error(err.message || "Could not reset your password");
@@ -93,7 +96,7 @@ export function ResetPassword() {
         ) : (
           <>
             <h2 className="text-2xl font-bold tracking-tight text-slate-900 text-center">
-              {needsCode ? "Two-factor verification" : "Set a new password"}
+              {needsCode ? "Two-factor verification" : otpType === "invite" ? "Set your password" : "Set a new password"}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               {needsCode ? (
@@ -112,7 +115,7 @@ export function ResetPassword() {
               ) : (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="password">New password</Label>
+                    <Label htmlFor="password">{otpType === "invite" ? "Password" : "New password"}</Label>
                     <Input
                       id="password"
                       type="password"
@@ -144,7 +147,7 @@ export function ResetPassword() {
                 className="w-full h-12 text-base font-medium bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-all"
                 disabled={isLoading || (needsCode && mfaCode.length !== 6)}
               >
-                {isLoading ? "Saving..." : needsCode ? "Verify and update password" : "Update password"}
+                {isLoading ? "Saving..." : needsCode ? "Verify and update password" : otpType === "invite" ? "Set password" : "Update password"}
               </Button>
             </form>
           </>

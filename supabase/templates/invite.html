@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>You have been invited to Inspectra</title>
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .bg { background-color: #0b1411 !important; }
+      .card { background-color: #111c18 !important; border-color: #1f2f29 !important; }
+      .text { color: #e2e8f0 !important; }
+      .muted { color: #94a3b8 !important; }
+      .link { color: #6ee7b7 !important; }
+      .note { background-color: #1a1a12 !important; border-color: #3f3a1d !important; color: #fde68a !important; }
+    }
+    @media (max-width: 480px) {
+      .pad { padding: 28px 22px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#f8fafc;">
+  <!-- Inbox preview text -->
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">You have been invited to Inspectra. Use this link to set your password. It expires in 24 hours.</div>
+
+  <table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8fafc;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;font-family:Inter,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+          <!-- Brand header -->
+          <tr>
+            <td style="background-color:#059669;background-image:linear-gradient(135deg,#059669 0%,#047857 100%);border-radius:14px 14px 0 0;padding:28px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="width:36px;height:36px;background-color:rgba(255,255,255,0.18);border-radius:10px;text-align:center;vertical-align:middle;font-size:18px;line-height:36px;color:#ffffff;">&#128737;</td>
+                  <td style="padding-left:12px;font-size:20px;font-weight:700;letter-spacing:-0.3px;color:#ffffff;">Inspectra</td>
+                </tr>
+              </table>
+              <div style="margin-top:6px;font-size:13px;color:#d1fae5;">Sanitary Inspection &amp; Risk Classification System</div>
+            </td>
+          </tr>
+
+          <!-- Card body -->
+          <tr>
+            <td class="card pad" style="background-color:#ffffff;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 14px 14px;padding:36px 32px;">
+              <h1 class="text" style="margin:0 0 8px;font-size:22px;line-height:1.3;font-weight:700;color:#0f172a;">You have been invited</h1>
+              <p class="muted" style="margin:0 0 28px;font-size:15px;line-height:1.6;color:#475569;">An administrator has created an Inspectra account for this address. Open the link below to choose your password.</p>
+
+              <!-- Plain text on purpose: Brevo rewrites link tags to its click-tracking host, which times out. -->
+              <p class="text" style="margin:0;font-size:14px;line-height:1.6;color:#0f172a;word-break:break-all;">{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&amp;type=invite</p>
+              <p class="muted" style="margin:10px 0 28px;font-size:12px;text-align:center;color:#94a3b8;">This link expires in 24 hours and can only be used once.</p>
+
+              <!-- Security note -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td class="note" style="background-color:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;font-size:13px;line-height:1.55;color:#92400e;">
+                    <strong>&#128274; Not expecting this?</strong> You can safely ignore this email. No account is activated unless you use the link above.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" class="muted" style="padding:24px 16px 0;font-size:12px;line-height:1.6;color:#94a3b8;">
+              &copy; Inspectra Systems &middot; This is an automated message, please don't reply.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
