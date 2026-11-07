@@ -23,6 +23,9 @@ interface AuthState {
    *  RLS blocks every table read in that state, so the guards park the
    *  user on /login where the OTP pane completes the sign-in. */
   needsMfa: boolean;
+  /** True once a verified TOTP factor exists. Administrators must have one
+   *  (11_admin_mfa_required.sql); AuthGuard sends them to enrol otherwise. */
+  mfaEnrolled: boolean;
   isLoading: boolean;
   error: Error | null;
   refreshUser: () => Promise<void>;
@@ -37,6 +40,7 @@ const AuthContext = createContext<AuthState>({
   role: null,
   emailVerified: false,
   needsMfa: false,
+  mfaEnrolled: false,
   isLoading: true,
   error: null,
   refreshUser: noopAsync,
@@ -50,6 +54,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     role: null,
     emailVerified: false,
     needsMfa: false,
+    mfaEnrolled: false,
     isLoading: true,
     error: null,
     refreshUser: noopAsync,
@@ -69,15 +74,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // HAS enrolled, an AAL1 session must not browse data — the restrictive
     // RLS policies refuse it server-side, and this flag is how the UI knows
     // to ask for the code instead of rendering empty tables.
-    const checkMfa = async (): Promise<boolean> => {
+    // nextLevel is 'aal2' exactly when a verified factor exists.
+    const checkMfa = async () => {
       const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      return data?.currentLevel === 'aal1' && data?.nextLevel === 'aal2';
+      const enrolled = data?.nextLevel === 'aal2';
+      return { enrolled, needsMfa: data?.currentLevel === 'aal1' && enrolled };
     };
 
     // [REF: WEB_PROFILE_BOOTSTRAP]
     const loadProfile = async (user: User) => {
       try {
-        const needsMfa = await checkMfa();
+        const { enrolled, needsMfa } = await checkMfa();
         if (needsMfa) {
           // Don't touch profiles yet — RLS would refuse the read anyway.
           if (mounted) {
@@ -86,6 +93,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               user,
               session: true,
               needsMfa: true,
+              mfaEnrolled: true,
               emailVerified: verified(user),
               isLoading: false,
               error: null,
@@ -142,6 +150,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             role,
             emailVerified: verified(user),
             needsMfa: false,
+            mfaEnrolled: enrolled,
             isLoading: false,
             error: null,
           }));
@@ -201,6 +210,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             role: null,
             emailVerified: false,
             needsMfa: false,
+            mfaEnrolled: false,
             isLoading: false,
             refreshUser: noopAsync,
             retryProfile: noopAsync,

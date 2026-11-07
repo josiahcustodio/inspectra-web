@@ -9,7 +9,7 @@ interface AuthGuardProps {
 
 // [REF: WEB_AUTH_GUARD]
 export function AuthGuard({ allowedRoles }: AuthGuardProps) {
-  const { session, role, emailVerified, needsMfa, isLoading, error, retryProfile } = useAuth();
+  const { session, role, emailVerified, needsMfa, mfaEnrolled, isLoading, error, retryProfile } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -56,6 +56,11 @@ export function AuthGuard({ allowedRoles }: AuthGuardProps) {
           <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       );
+    }
+    // Administrators must enrol a second factor (11_admin_mfa_required.sql
+    // refuses every other read until they do). Settings holds the enrolment.
+    if (role === 'admin' && !mfaEnrolled && location.pathname !== '/admin/settings') {
+      return <Navigate to="/admin/settings" replace />;
     }
     if (!allowedRoles.includes(role)) {
       // Back to the index, which is the one place that knows where each role

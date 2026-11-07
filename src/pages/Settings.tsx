@@ -32,7 +32,8 @@ import { exportIncludesCategory, setExportIncludesCategory } from "@/lib/exportP
 // start an enrolment without a recent-login proof; the confirmation code is
 // itself the proof, and verifying it also upgrades this session to AAL2.
 function SecuritySettings() {
-  const { user } = useAuth();
+  const { user, role, mfaEnrolled, retryProfile } = useAuth();
+  const mfaRequired = role === 'admin';
 
   // The enrolled-factor state lives server-side; listFactors() is the truth.
   // Reloaded after every enrol/unenroll via the counter.
@@ -103,6 +104,8 @@ function SecuritySettings() {
       setFactorId(null);
       setTotpSecret(null);
       setReloadCounter((n) => n + 1);
+      // Lets AuthGuard release an admin who was held here to enrol.
+      void retryProfile();
     } catch (err: any) {
       toast.error(err.message || "Invalid code, try again");
     } finally {
@@ -131,16 +134,27 @@ function SecuritySettings() {
         <h3 className="font-bold text-slate-900 text-lg">Two-Factor Authentication</h3>
       </div>
 
+      {mfaRequired && !mfaEnrolled && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Two-factor authentication is required for administrator accounts. Set it up
+          below to continue using the portal.
+        </p>
+      )}
+
       {enrolledTotp ? (
         <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
           <div>
             <p className="font-bold text-slate-900">Authenticator app enabled</p>
             <p className="text-sm text-slate-500">{enrolledTotp.friendly_name ?? "TOTP factor"}</p>
           </div>
-          <Button variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={handleUnenroll}>
-            <Trash2 className="w-4 h-4" />
-            Remove
-          </Button>
+          {mfaRequired ? (
+            <p className="text-sm text-slate-500">Required for administrators</p>
+          ) : (
+            <Button variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={handleUnenroll}>
+              <Trash2 className="w-4 h-4" />
+              Remove
+            </Button>
+          )}
         </div>
       ) : (
         <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
