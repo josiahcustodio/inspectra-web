@@ -1,69 +1,24 @@
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  User, ClipboardCheck, Award, Plus, Trash2, Pencil, CheckCircle2, LineChart, TrendingUp,
-} from "lucide-react";
+import { User, ClipboardCheck, CheckCircle2 } from "lucide-react";
 import { useCollection } from "@/lib/useCollection";
 import {
   COLLECTIONS,
-  deleteInspector,
   mapEstablishment,
   mapInspectionLog,
   mapInspector,
   mapProfile,
-  saveInspector,
 } from "@/lib/firestore";
-import type { InspectionLog, Inspector } from "@/lib/models";
-import { useAuth } from "@/lib/useAuth";
+import type { InspectionLog } from "@/lib/models";
 import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { byNewestFirst, isoDatePart, isoTimePart } from "@/lib/inspectionDates";
 import { ratingColor, ratingLabel } from "@/lib/ratingScale";
-import { toast } from "sonner";
-
-function getStatusColor(status: string) {
-  return status === "Active" ? "var(--primary)" : "var(--muted-foreground)";
-}
-
-function getPerformanceColor(performance: string) {
-  switch (performance) {
-    case "Excellent": return "var(--primary)";
-    case "Good": return "#F59E0B";
-    default: return "var(--muted-foreground)";
-  }
-}
-
-const EMPTY_FORM = {
-  name: "",
-  inspectorId: "",
-  email: "",
-  phone: "",
-  status: "Active",
-  performance: "Good",
-};
-
-// Synthetic rows (accounts and log-only inspectors) aren't documents in the
-// `inspectors` directory, so they can't be edited or deleted in place — the
-// admin can promote one into the directory instead.
-function isDirectoryEntry(inspector: Inspector): boolean {
-  return !inspector.id.startsWith("profile:") && !inspector.id.startsWith("log:");
-}
 
 // [REF: INSPECTOR_PERIOD]
 // Every figure on this page is scoped to one of these windows. Days are
@@ -95,7 +50,11 @@ function inWindow(logs: InspectionLog[], since: string | null, before: string | 
   });
 }
 
-interface InspectorRow extends Inspector {
+interface InspectorRow {
+  id: string;
+  name: string;
+  /** Directory ID, or where this inspector was found when not in the directory. */
+  subtitle: string;
   /** Every log this inspector wrote, whatever the period. */
   logs: InspectionLog[];
 }
@@ -103,14 +62,15 @@ interface InspectorRow extends Inspector {
 // [REF: INSPECTOR_DIRECTORY]
 //
 // The list shown here is a merge of every place a real inspector can exist:
-//  1. the admin-curated `inspectors` directory,
+//  1. the admin-curated `inspectors` directory (read-only here; it fills
+//     itself from accounts and inspection records, so there is nothing to
+//     add by hand),
 //  2. officer accounts in `profiles` — only that role, since the table also
 //     holds admins, unactivated 'pending' signups and establishment owners
 //     (readable by admins only — a permission error on that source just means
 //     it's unavailable, not that the page failed), and
 //  3. names found on submitted `inspection_logs`.
-// Inspection counts are always derived live from the logs, because no client
-// keeps the directory's counter fields up to date.
+// Inspection counts are always derived live from the logs.
 export function Inspectors() {
   const { data, error } = useCollection(COLLECTIONS.inspectors, mapInspector);
   const { data: profiles } = useCollection(COLLECTIONS.profiles, mapProfile);
@@ -131,8 +91,6 @@ export function Inspectors() {
   }, [establishments]);
 
   const inspectors = useMemo(() => {
-    const directory = data ?? [];
-
     // Per-inspector logs, keyed by the normalised `inspector_name` the
     // mobile client stamps on each log (displayName, falling back to email).
     const byName = new Map<string, { name: string; logs: InspectionLog[] }>();
@@ -160,14 +118,12 @@ export function Inspectors() {
     const merged: InspectorRow[] = [];
     const seenEmails = new Set<string>();
 
-    for (const d of directory) {
+    for (const d of data ?? []) {
       if (d.email) seenEmails.add(d.email.trim().toLowerCase());
-      // Live off the logs, never the stored columns: a stale directory counter
-      // used to outrank the real count and could only ever climb.
-      merged.push({ ...d, totalInspections: 0, completedToday: 0, logs: claim(d.name, d.email)?.logs ?? [] });
+      merged.push({ id: d.id, name: d.name, subtitle: d.inspectorId, logs: claim(d.name, d.email)?.logs ?? [] });
     }
 
-    // Registered mobile accounts that aren't in the directory yet. Officers
+    // Registered mobile accounts that aren't in the directory. Officers
     // only: 'pending' signups and establishment owners are not inspectors.
     for (const p of profiles ?? []) {
       if (p.role !== "officer") continue;
@@ -178,33 +134,14 @@ export function Inspectors() {
       merged.push({
         id: `profile:${p.id}`,
         name: s?.name ?? p.email.split("@")[0],
-        inspectorId: "Registered account",
-        email: p.email,
-        phone: "—",
-        status: "Active",
-        performance: "Unrated",
-        totalInspections: 0,
-        completedToday: 0,
-        updated_at: p.created_at ?? "",
+        subtitle: "Registered account",
         logs: s?.logs ?? [],
       });
     }
 
     // Inspectors who only exist as names on submitted logs.
     for (const [key, s] of byName) {
-      merged.push({
-        id: `log:${key}`,
-        name: s.name,
-        inspectorId: "From inspection records",
-        email: s.name.includes("@") ? s.name : "—",
-        phone: "—",
-        status: "Active",
-        performance: "Unrated",
-        totalInspections: 0,
-        completedToday: 0,
-        updated_at: "",
-        logs: s.logs,
-      });
+      merged.push({ id: `log:${key}`, name: s.name, subtitle: "From inspection records", logs: s.logs });
     }
 
     return merged;
@@ -213,145 +150,37 @@ export function Inspectors() {
   // Period figures per inspector. "All days" averages over the span since
   // that inspector's first log (one week at least); a fixed window averages
   // over the window itself.
-  const summarize = (row: InspectorRow) => {
-    const scoped = inWindow(row.logs, since);
-    const brgys = new Set<string>();
-    const ests = new Set<string>();
-    let earliest = todayKey;
-    for (const l of scoped) {
-      const b = barangayOf(l);
-      if (b) brgys.add(b);
-      if (l.establishment_id) ests.add(l.establishment_id);
-      const day = isoDatePart(l.inspection_date);
-      if (day && day < earliest) earliest = day;
-    }
-    const spanDays = periodSpec.days ??
-      Math.max(7, Math.round((Date.parse(todayKey) - Date.parse(earliest)) / 86_400_000) + 1);
-    return {
-      total: scoped.length,
-      today: scoped.filter((l) => isoDatePart(l.inspection_date) === todayKey).length,
-      barangays: brgys.size,
-      establishments: ests.size,
-      // Meaningless below a week: two inspections today would read as 14/wk.
-      perWeek: spanDays < 7 ? null : Math.round((scoped.length / spanDays) * 7 * 10) / 10,
-    };
-  };
-  const summaries = useMemo(
-    () => new Map(inspectors.map((i) => [i.id, summarize(i)] as const)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [inspectors, since, barangayOf],
-  );
-
-  // Header figures for the same window, with the previous window of equal
-  // length for the comparison (none for "All days").
-  const header = useMemo(() => {
-    const all = inspectors.flatMap((i) => i.logs);
-    const scoped = inWindow(all, since);
-    const previous = periodSpec.days === null
-      ? null
-      : inWindow(all, daysAgoKey(periodSpec.days * 2 - 1), since).length;
-    const rated = scoped.filter((l) => l.percentage_rating != null);
-    const avg = rated.length
-      ? Math.round(rated.reduce((a, l) => a + (l.percentage_rating ?? 0), 0) / rated.length)
-      : null;
-    const active = inspectors.filter((i) => (summaries.get(i.id)?.total ?? 0) > 0).length;
-    return { inspections: scoped.length, previous, avg, active };
-  }, [inspectors, since, periodSpec.days, summaries]);
-
-  // Most common performance rating across the team — from the real
-  // per-inspector `performance` field, not a hard-coded label.
-  const typicalPerformance = (() => {
-    const counts = new Map<string, number>();
-    for (const i of inspectors) {
-      if (i.performance && i.performance !== "Unrated") {
-        counts.set(i.performance, (counts.get(i.performance) ?? 0) + 1);
+  const summaries = useMemo(() => {
+    const summarize = (row: InspectorRow) => {
+      const scoped = inWindow(row.logs, since);
+      const brgys = new Set<string>();
+      const ests = new Set<string>();
+      let earliest = todayKey;
+      for (const l of scoped) {
+        const b = barangayOf(l);
+        if (b) brgys.add(b);
+        if (l.establishment_id) ests.add(l.establishment_id);
+        const day = isoDatePart(l.inspection_date);
+        if (day && day < earliest) earliest = day;
       }
-    }
-    let best: string | null = null;
-    for (const [label, count] of counts) {
-      if (best === null || count > (counts.get(best) ?? 0)) best = label;
-    }
-    return best;
-  })();
-  const { role } = useAuth();
-  const isAdmin = role === "admin";
+      const spanDays = periodSpec.days ??
+        Math.max(7, Math.round((Date.parse(todayKey) - Date.parse(earliest)) / 86_400_000) + 1);
+      return {
+        total: scoped.length,
+        today: scoped.filter((l) => isoDatePart(l.inspection_date) === todayKey).length,
+        barangays: brgys.size,
+        establishments: ests.size,
+        // Meaningless below a week: two inspections today would read as 14/wk.
+        perWeek: spanDays < 7 ? null : Math.round((scoped.length / spanDays) * 7 * 10) / 10,
+      };
+    };
+    return new Map(inspectors.map((i) => [i.id, summarize(i)] as const));
+  }, [inspectors, since, periodSpec.days, todayKey, barangayOf]);
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-
-  function openAdd() {
-    setForm(EMPTY_FORM);
-    setEditingId(null);
-    setIsDialogOpen(true);
-  }
-
-  // Promote a synthetic row (registered account / log-only name) into a real
-  // directory document: an "add" prefilled with what we already know.
-  function openAddFrom(inspector: Inspector) {
-    setForm({
-      ...EMPTY_FORM,
-      name: inspector.name,
-      email: inspector.email === "—" ? "" : inspector.email,
-    });
-    setEditingId(null);
-    setIsDialogOpen(true);
-  }
-
-  function openEdit(inspector: Inspector) {
-    setForm({
-      name: inspector.name,
-      inspectorId: inspector.inspectorId,
-      email: inspector.email,
-      phone: inspector.phone,
-      status: inspector.status,
-      performance: inspector.performance,
-    });
-    setEditingId(inspector.id);
-    setIsDialogOpen(true);
-  }
-
-  async function handleSave() {
-    if (!form.name || !form.inspectorId || !form.email || !form.phone) {
-      toast.error("Please fill in all required fields.");
-      return;
-    }
-    setIsSaving(true);
-    try {
-      // Inspection counters belong to the inspection flow, not to this form:
-      // carry the STORED values through so an edit neither zeroes them nor
-      // rewrites them. Read from `data` (the raw directory), never from the
-      // live log-derived figures.
-      const existing = editingId ? (data ?? []).find((i) => i.id === editingId) : null;
-
-      await saveInspector(editingId, {
-        ...form,
-        totalInspections: existing?.totalInspections ?? 0,
-        completedToday: existing?.completedToday ?? 0,
-      });
-
-      toast.success(editingId ? "Inspector updated." : "Inspector added.");
-      setIsDialogOpen(false);
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to save inspector.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  const [deleteTarget, setDeleteTarget] = useState<Inspector | null>(null);
-
-  async function handleDelete() {
-    if (!deleteTarget) return;
-    try {
-      await deleteInspector(deleteTarget.id);
-      toast.success("Inspector deleted.");
-      setDeleteTarget(null);
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to delete inspector.");
-    }
-  }
+  const periodInspections = useMemo(
+    () => inWindow(inspectors.flatMap((i) => i.logs), since).length,
+    [inspectors, since],
+  );
 
   // [REF: INSPECTOR_DETAILS]
   // One inspector's inspections, every period, with a barangay filter and an
@@ -381,82 +210,41 @@ export function Inspectors() {
     [detailsFor, barangayOf],
   );
 
-  const delta = header.previous === null ? null : header.inspections - header.previous;
-
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Inspectors</h2>
-          <p className="text-muted-foreground mt-1">Manage inspection team members</p>
+          <p className="text-muted-foreground mt-1">Field inspectors and their inspections</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Period */}
-          <div role="radiogroup" aria-label="Period" className="inline-flex rounded-lg border border-border bg-white p-1">
-            {PERIODS.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                role="radio"
-                aria-checked={period === p.key}
-                onClick={() => setPeriod(p.key)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${
-                  period === p.key ? "bg-primary text-primary-foreground shadow-sm" : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          {isAdmin && (
-            <Button
-              onClick={openAdd}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm font-bold"
+        {/* Period */}
+        <div role="radiogroup" aria-label="Period" className="inline-flex rounded-lg border border-border bg-white p-1">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              role="radio"
+              aria-checked={period === p.key}
+              onClick={() => setPeriod(p.key)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                period === p.key ? "bg-primary text-primary-foreground shadow-sm" : "text-slate-600 hover:bg-slate-50"
+              }`}
             >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Inspector
-            </Button>
-          )}
+              {p.label}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-5 bg-white rounded-xl">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Total Inspectors</p>
-          <div className="flex items-end justify-between gap-2">
-            <h3 className="font-black text-slate-900 text-3xl leading-none">{inspectors.length}</h3>
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 rounded-full px-2.5 py-1">
-              {inspectors.length ? Math.round((inspectors.filter((i) => i.status === "Active").length / inspectors.length) * 100) : 0}% Active
-            </span>
-          </div>
-        </Card>
-        <Card className="p-5 bg-white rounded-xl">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Active · {periodSpec.label}</p>
-          <div className="flex items-end justify-between gap-2">
-            <h3 className="font-black text-primary text-3xl leading-none">{header.active}</h3>
-            <span className="text-sm text-slate-400 font-medium">in the field</span>
-          </div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Inspectors</p>
+          <h3 className="font-black text-slate-900 text-3xl leading-none tabular-nums">{inspectors.length}</h3>
         </Card>
         <Card className="p-5 bg-white rounded-xl">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Inspections · {periodSpec.label}</p>
-          <div className="flex items-end justify-between gap-2">
-            <h3 className="font-black text-slate-900 text-3xl leading-none">{header.inspections}</h3>
-            {delta !== null && (
-              <span className={`text-xs font-bold rounded-full px-2.5 py-1 ${delta >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-700 bg-red-50"}`}>
-                {delta >= 0 ? "+" : ""}{delta} vs previous {periodSpec.days === 1 ? "day" : `${periodSpec.days} days`}
-              </span>
-            )}
-          </div>
-        </Card>
-        <Card className="p-5 bg-white rounded-xl">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Typical Performance</p>
-          <div className="flex items-end justify-between gap-2">
-            <h3 className="font-black text-primary text-3xl leading-none">{typicalPerformance ?? "N/A"}</h3>
-            <span className="text-sm text-slate-400 font-medium">
-              {header.avg === null ? "no rated inspections" : `${header.avg}% compliance`}
-            </span>
-          </div>
+          <h3 className="font-black text-primary text-3xl leading-none tabular-nums">{periodInspections}</h3>
         </Card>
       </div>
 
@@ -481,12 +269,10 @@ export function Inspectors() {
             <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
               <User className="w-7 h-7 text-slate-400" />
             </div>
-            <p className="text-muted-foreground font-bold">No inspectors found.</p>
-            {isAdmin && (
-              <p className="text-sm text-muted-foreground">
-                Click <strong>Add Inspector</strong> to get started.
-              </p>
-            )}
+            <p className="text-muted-foreground font-bold">No inspectors yet.</p>
+            <p className="text-sm text-muted-foreground">
+              Inspectors appear here once an officer account is activated or submits an inspection.
+            </p>
           </div>
         </Card>
       ) : (
@@ -494,102 +280,53 @@ export function Inspectors() {
           {inspectors.map((inspector) => {
             const s = summaries.get(inspector.id)!;
             return (
-              <Card key={inspector.id} className="bg-white rounded-xl hover:shadow-md transition-shadow flex flex-col overflow-hidden">
-                <div className="p-5 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex gap-3 min-w-0">
-                      <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                        <User className="w-6 h-6 text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-bold text-slate-900 text-lg leading-tight truncate" title={inspector.name}>{inspector.name}</h3>
-                        <p className="text-sm text-muted-foreground font-medium truncate">{inspector.inspectorId}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap"
-                        style={{
-                          backgroundColor: `color-mix(in srgb, ${getStatusColor(inspector.status)} 12%, transparent)`,
-                          color: getStatusColor(inspector.status),
-                          borderColor: `color-mix(in srgb, ${getStatusColor(inspector.status)} 30%, transparent)`,
-                        }}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                        {inspector.status}
-                      </span>
-                      <span
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap"
-                        style={{
-                          backgroundColor: `color-mix(in srgb, ${getPerformanceColor(inspector.performance)} 12%, transparent)`,
-                          color: getPerformanceColor(inspector.performance),
-                          borderColor: `color-mix(in srgb, ${getPerformanceColor(inspector.performance)} 30%, transparent)`,
-                        }}
-                      >
-                        <Award className="w-3 h-3" />
-                        {inspector.performance}
-                      </span>
-                    </div>
+              // The whole card opens the details; a real button keeps it
+              // reachable by keyboard and screen reader.
+              <button
+                key={inspector.id}
+                type="button"
+                onClick={() => openDetails(inspector)}
+                aria-haspopup="dialog"
+                className="text-left bg-white rounded-xl border border-border shadow-sm hover:shadow-md hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 transition-all p-5"
+              >
+                <div className="flex gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                    <User className="w-6 h-6 text-primary" />
                   </div>
-
-                  <div className="mt-5 grid grid-cols-3 divide-x divide-slate-200 rounded-xl bg-slate-50 border border-slate-100 py-3 text-center">
-                    <div className="px-2">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Barangays</p>
-                      <p className="text-xl font-black text-slate-900 tabular-nums">{s.barangays}</p>
-                      <p className="text-xs text-muted-foreground font-medium">Covered</p>
-                    </div>
-                    <div className="px-2">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Establishments</p>
-                      <p className="text-xl font-black text-slate-900 tabular-nums">{s.establishments}</p>
-                      <p className="text-xs text-muted-foreground font-medium">Audited</p>
-                    </div>
-                    <div className="px-2">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Avg / wk</p>
-                      <p className="text-xl font-black text-primary tabular-nums">{s.perWeek ?? "—"}</p>
-                      <p className="text-xs text-muted-foreground font-medium">Inspections</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1.5 text-slate-600 font-medium">
-                      <CheckCircle2 className="w-4 h-4 text-primary" />
-                      <span className="font-bold text-slate-900 tabular-nums">{s.total}</span> total
-                    </span>
-                    <span className="text-slate-600 font-medium">
-                      <span className="font-bold text-primary tabular-nums">{s.today}</span> completed today
-                    </span>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-slate-900 text-lg leading-tight truncate" title={inspector.name}>{inspector.name}</h3>
+                    <p className="text-sm text-muted-foreground font-medium truncate">{inspector.subtitle}</p>
                   </div>
                 </div>
 
-                <div className="border-t border-slate-100 px-5 py-3 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => openDetails(inspector)}
-                    className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-700 hover:text-primary"
-                  >
-                    <LineChart className="w-4 h-4" />
-                    Details
-                  </button>
-                  {isAdmin && (
-                    isDirectoryEntry(inspector) ? (
-                      <div className="flex items-center gap-3">
-                        <button type="button" onClick={() => openEdit(inspector)} className="inline-flex items-center gap-1 text-sm font-bold text-slate-700 hover:text-primary">
-                          <Pencil className="w-3.5 h-3.5" />
-                          Edit
-                        </button>
-                        <button type="button" onClick={() => setDeleteTarget(inspector)} aria-label={`Delete ${inspector.name}`} className="text-slate-400 hover:text-red-600">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="button" onClick={() => openAddFrom(inspector)} className="inline-flex items-center gap-1 text-sm font-bold text-slate-700 hover:text-primary">
-                        <Plus className="w-3.5 h-3.5" />
-                        Add to directory
-                      </button>
-                    )
-                  )}
+                <div className="mt-5 grid grid-cols-3 divide-x divide-slate-200 rounded-xl bg-slate-50 border border-slate-100 py-3 text-center">
+                  <div className="px-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Barangays</p>
+                    <p className="text-xl font-black text-slate-900 tabular-nums">{s.barangays}</p>
+                    <p className="text-xs text-muted-foreground font-medium">Covered</p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Establishments</p>
+                    <p className="text-xl font-black text-slate-900 tabular-nums">{s.establishments}</p>
+                    <p className="text-xs text-muted-foreground font-medium">Audited</p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Avg / wk</p>
+                    <p className="text-xl font-black text-primary tabular-nums">{s.perWeek ?? "—"}</p>
+                    <p className="text-xs text-muted-foreground font-medium">Inspections</p>
+                  </div>
                 </div>
-              </Card>
+
+                <div className="mt-4 flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-1.5 text-slate-600 font-medium">
+                    <CheckCircle2 className="w-4 h-4 text-primary" />
+                    <span className="font-bold text-slate-900 tabular-nums">{s.total}</span> total
+                  </span>
+                  <span className="text-slate-600 font-medium">
+                    <span className="font-bold text-primary tabular-nums">{s.today}</span> completed today
+                  </span>
+                </div>
+              </button>
             );
           })}
         </div>
@@ -675,91 +412,6 @@ export function Inspectors() {
               </table>
             )}
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete */}
-      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-slate-900 font-bold">Delete inspector?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-slate-600">
-            <span className="font-bold text-slate-900">{deleteTarget?.name}</span> will be removed from the directory. This cannot be undone.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleDelete}>
-              <Trash2 className="w-4 h-4 mr-1" />
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add / Edit */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-slate-900 font-bold">
-              {editingId ? "Edit Inspector" : "Add Inspector"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name <span className="text-red-500">*</span></Label>
-                <Input id="name" placeholder="e.g. Juan Dela Cruz" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="inspectorId">Inspector ID <span className="text-red-500">*</span></Label>
-                <Input id="inspectorId" placeholder="e.g. INSP-001" value={form.inspectorId} onChange={e => setForm(f => ({ ...f, inspectorId: e.target.value }))} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email <span className="text-red-500">*</span></Label>
-              <Input id="email" type="email" placeholder="inspector@email.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone <span className="text-red-500">*</span></Label>
-              <Input id="phone" placeholder="e.g. 09XX-XXX-XXXX" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                    <SelectItem value="On Leave">On Leave</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Performance</Label>
-                <Select value={form.performance} onValueChange={v => setForm(f => ({ ...f, performance: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Excellent">Excellent</SelectItem>
-                    <SelectItem value="Good">Good</SelectItem>
-                    <SelectItem value="Needs Improvement">Needs Improvement</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={isSaving} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold">
-              {isSaving ? (
-                <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />
-              ) : null}
-              {editingId ? "Save Changes" : "Add Inspector"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
