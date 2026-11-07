@@ -6,7 +6,6 @@ import { Inspections } from "@/pages/Inspections";
 import { GISMap } from "@/pages/GISMap";
 import { Inspectors } from "@/pages/Inspectors";
 import { Masterlist } from "@/pages/Masterlist";
-import { MasterlistImport } from "@/pages/MasterlistImport";
 import { Settings } from "@/pages/Settings";
 import { Access } from "@/pages/Access";
 import { Audit } from "@/pages/Audit";
@@ -110,7 +109,6 @@ export const router = createBrowserRouter([
               // the RLS policies (migration/sql/02_rls.sql), so mounting the importer for officers would
               // give them a page whose every write fails.
               { path: "masterlist", Component: Masterlist },
-              { path: "import", Component: MasterlistImport },
               // Admin branch only. Writing profiles.role is admin-gated in RLS
               // (profiles_update) and so is establishment_contacts, so an
               // officer would get a page whose every write fails.

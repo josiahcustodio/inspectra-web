@@ -22,7 +22,9 @@
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, Upload } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { MasterlistImport } from "@/pages/MasterlistImport";
 import { toast } from "sonner";
 import { useCollection } from "@/lib/useCollection";
 import {
@@ -98,6 +100,7 @@ export function Masterlist() {
   const [delistBusy, setDelistBusy] = useState<string | null>(null);
   // Delisting is a write; RLS refuses it for a department head anyway.
   const canEdit = useAuth().role === "admin";
+  const [importOpen, setImportOpen] = useState(false);
   const toggleDelisted = async (est: Establishment) => {
     const delisting = est.status !== "delisted";
     if (
@@ -304,15 +307,39 @@ export function Masterlist() {
             The full masterlist view. Date Inspected and Remarks are live from field inspections.
           </p>
         </div>
-        <Button
-          onClick={() => void handleExport()}
-          disabled={rows.length === 0 || isExporting}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-sm"
-        >
-          <Download className="w-4 h-4 mr-2" />
-          {isExporting ? "Building file…" : "Export to Excel"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button variant="outline" onClick={() => setImportOpen(true)} className="font-bold">
+              <Upload className="w-4 h-4 mr-2" />
+              Import
+            </Button>
+          )}
+          <Button
+            onClick={() => void handleExport()}
+            disabled={rows.length === 0 || isExporting}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-sm"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            {isExporting ? "Building file…" : "Export to Excel"}
+          </Button>
+        </div>
       </div>
+
+      {/* The importer keeps its own state while open; closing mid-run is the
+          same as closing the old tab (see MasterlistImport's header note). */}
+      {canEdit && (
+        <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-slate-900 font-bold">Masterlist Import</DialogTitle>
+              <DialogDescription>
+                Upload the Excel masterlist from upper management. Inspection results are never touched by an import.
+              </DialogDescription>
+            </DialogHeader>
+            <MasterlistImport />
+          </DialogContent>
+        </Dialog>
+      )}
 
       <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
         <input

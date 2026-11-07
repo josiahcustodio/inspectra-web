@@ -1,6 +1,7 @@
 // [REF: MASTERLIST_IMPORT_PAGE]
 //
-// Admin-only. Walks one Excel masterlist through four stages:
+// Admin-only, opened as a dialog from the Masterlist page. Walks one Excel
+// masterlist through four stages:
 //
 //   pick file  ->  preview (choose which sheets to include)  ->  run  ->  report
 //
@@ -151,13 +152,7 @@ export function MasterlistImport() {
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full gap-6">
-      <div className="flex-shrink-0">
-        <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Masterlist Import</h2>
-        <p className="text-muted-foreground mt-1 text-sm font-medium">
-          Upload the Excel masterlist from upper management. Inspection results are never touched by an import.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
 
       {phase.step === "pick" && (
         <Card className="bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border p-8 max-w-2xl">
