@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ShieldCheck, ShieldQuestion } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { challengeAndVerifyTotp } from "@/lib/totp";
+import { logEvent } from "@/lib/auditEvents";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/useAuth";
 
@@ -70,6 +71,10 @@ export function Login() {
       if (error) throw error;
       // If this account has a TOTP factor, useAuth flips needsMfa and this
       // page re-renders into the OTP pane; otherwise the guard redirects home.
+      // The trail records the sign-in only once it is complete, so an
+      // account with a factor is recorded after the code instead.
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal?.nextLevel !== "aal2") logEvent("SIGN_IN", "Portal sign-in");
       toast.success("Successfully logged in");
     } catch (err: any) {
       if (/email not confirmed/i.test(err.message ?? "")) {
@@ -102,6 +107,7 @@ export function Login() {
         return;
       }
       await challengeAndVerifyTotp(factor.id, mfaCode);
+      logEvent("SIGN_IN", "Portal sign-in with authenticator code");
       toast.success("Successfully logged in");
       // The verify call refreshes the session to AAL2; useAuth hears the auth
       // state change, clears needsMfa, and the effect above redirects home.

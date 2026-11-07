@@ -11,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buildComplianceReportPdf, complianceReportFileName } from "@/lib/complianceReportPdf";
+import { logEvent } from "@/lib/auditEvents";
 import { buildScopePreview, manilaDate, MAX_RANGE_DAYS, rangeInstants } from "@/lib/complianceReportScope";
 import type { Establishment, InspectionLog } from "@/lib/models";
 import { RATING_BANDS, ratingBandSpec, UNSCORED_COLOR } from "@/lib/ratingScale";
@@ -102,6 +103,8 @@ export function BarangaySummaryDialog({ establishments, logs }: Props) {
           pages,
         });
         setEditing(false);
+        logEvent("REPORT", `Barangay compliance report ${fromDay} to ${toDay}` +
+          (selected.length < preview.barangays.length ? `, ${selected.length} barangays` : ""));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not build the PDF.");
       }

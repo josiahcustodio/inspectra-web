@@ -43,6 +43,7 @@ import { ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModal";
 import { PageStrip } from "@/components/PageStrip";
 import { useAuth } from "@/lib/useAuth";
+import { logEvent } from "@/lib/auditEvents";
 
 const PAGE_SIZE = 50;
 
@@ -289,6 +290,7 @@ export function Masterlist() {
         },
       );
 
+      logEvent("EXPORT", `Masterlist to Excel, ${result.rows} rows (${groupFilter === "all" ? "food & non-food" : groupFilter.replace("_", "-")})`);
       toast.success(`Exported ${result.rows} rows.`);
     } catch (err) {
       toast.error("Couldn't build the Excel file. Check your connection and try again.");

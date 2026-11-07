@@ -137,7 +137,7 @@ export async function buildMasterlistWorkbook(
 }
 
 /** Hand the finished workbook to the browser as a download. */
-function saveWorkbook(buffer: ArrayBuffer, fileName: string): void {
+export function saveWorkbook(buffer: ArrayBuffer, fileName: string): void {
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
