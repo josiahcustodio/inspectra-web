@@ -408,8 +408,8 @@ export function GISMap() {
   const tooltipCounts = (name: string) => byBarangay.get(name)?.total ?? 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col gap-4">
+      <div className="flex items-center justify-between flex-shrink-0">
         <div>
           <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Live City Health Monitor</h2>
           <p className="text-muted-foreground mt-1 font-medium">
@@ -426,9 +426,11 @@ export function GISMap() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      {/* Sized to the viewport: map and sidebar share the height left under the
+          header, so the city stats and legend are visible without scrolling. */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Main Map Card */}
-        <Card className="p-0 bg-white rounded-xl lg:col-span-3 overflow-hidden relative shadow-sm">
+        <Card className="p-0 bg-white rounded-xl lg:col-span-3 overflow-hidden relative shadow-sm flex flex-col min-h-[420px]">
 
           {/* Floating Search Bar */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md px-4">
@@ -481,7 +483,7 @@ export function GISMap() {
           </div>
 
           {/* Leaflet Map Container */}
-          <div ref={mapRef} className="w-full h-[650px]" style={{ zIndex: 0 }} />
+          <div ref={mapRef} className="w-full flex-1 min-h-0" style={{ zIndex: 0 }} />
 
           {/* [REF: GIS_EMPTY_STATE]
               The boundaries always draw, so an empty map means no establishment
@@ -511,24 +513,24 @@ export function GISMap() {
           )}
         </Card>
 
-        {/* Sidebar */}
-        <div className="space-y-4">
-          <Card className="p-6 bg-white rounded-xl">
+        {/* Sidebar: the band rows double as the legend, so there is one card. */}
+        <div className="flex flex-col gap-3 min-h-0">
+          <Card className="p-4 bg-white rounded-xl flex-1 min-h-0 overflow-y-auto">
             {selectedStats ? (
               <button
                 onClick={resetView}
-                className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-slate-900 transition-colors mb-3"
+                className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-slate-900 transition-colors mb-2"
               >
                 <ChevronLeft className="w-4 h-4" />
                 Whole city
               </button>
             ) : (
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">
                 Citywide
               </p>
             )}
 
-            <div className="flex items-start justify-between gap-3 mb-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
               <h3 className="font-bold text-slate-900 text-lg tracking-tight leading-tight">
                 {panelStats.name}
               </h3>
@@ -542,51 +544,51 @@ export function GISMap() {
               )}
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-100">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-100">
                 <span className="text-sm text-slate-700 font-bold">Establishments</span>
-                <span className="font-black text-2xl text-slate-900">{panelStats.total}</span>
+                <span className="font-black text-xl text-slate-900 tabular-nums">{panelStats.total}</span>
               </div>
-              {/* [REF: RATING_SCALE] one row per band, in the shared order */}
-              {RATING_BANDS.map((b) => (
+              {/* [REF: RATING_SCALE] one row per band, in the shared order.
+                  Colour, label and range here are the map legend. */}
+              {[
+                ...RATING_BANDS.map((b) => ({ key: b.band, color: b.color, label: b.label, range: `${b.range}%`, count: panelStats[b.band] })),
+                { key: "unscored", color: UNSCORED_COLOR, label: UNSCORED_LABEL, range: "no inspection", count: panelStats.notInspected },
+              ].map((row) => (
                 <div
-                  key={b.band}
-                  className="flex items-center justify-between p-4 rounded-xl border"
+                  key={row.key}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg border"
                   style={{
-                    backgroundColor: `color-mix(in srgb, ${b.color} 10%, transparent)`,
-                    borderColor: `color-mix(in srgb, ${b.color} 25%, transparent)`,
+                    backgroundColor: `color-mix(in srgb, ${row.color} 10%, transparent)`,
+                    borderColor: `color-mix(in srgb, ${row.color} 25%, transparent)`,
                   }}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
                     <div
-                      className="w-4 h-4 rounded-full border-[3px] border-white shadow-sm"
-                      style={{ backgroundColor: b.color }}
+                      className="w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm flex-shrink-0"
+                      style={{ backgroundColor: row.color }}
                     />
-                    <div>
-                      <p className="text-sm text-slate-700 font-bold leading-tight">{b.label}</p>
-                      <p className="text-xs text-muted-foreground font-bold">{b.range}%</p>
-                    </div>
+                    <p className="text-sm text-slate-700 font-bold leading-tight truncate">
+                      {row.label} <span className="text-xs text-muted-foreground">&middot; {row.range}</span>
+                    </p>
                   </div>
-                  <span className="font-black text-2xl" style={{ color: b.color }}>
-                    {panelStats[b.band]}
+                  <span className="font-black text-lg tabular-nums flex-shrink-0" style={{ color: row.color }}>
+                    {row.count}
                   </span>
                 </div>
               ))}
-              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-slate-400 border-[3px] border-white shadow-sm" />
-                  <span className="text-sm text-slate-700 font-bold">{UNSCORED_LABEL}</span>
-                </div>
-                <span className="font-black text-2xl text-slate-500">{panelStats.notInspected}</span>
-              </div>
             </div>
+            <p className="text-[11px] text-muted-foreground font-medium mt-3 leading-snug">
+              A barangay is shaded by its worst-rated establishment; darker fill means more
+              establishments registered there.
+            </p>
 
             {selectedStats && selectedStats.establishments.length > 0 && (
-              <div className="mt-5 pt-5 border-t border-slate-100">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
                   Establishments here
                 </p>
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                <div className="space-y-1 pr-1">
                   {selectedStats.establishments.map((est) => (
                     <div key={est.id} className="flex items-center justify-between gap-3 py-2 border-b border-slate-50 last:border-0">
                       <div className="min-w-0">
@@ -609,72 +611,20 @@ export function GISMap() {
             )}
 
             {selectedStats && selectedStats.total === 0 && (
-              <p className="mt-5 text-sm text-slate-600 font-medium leading-relaxed">
+              <p className="mt-4 text-sm text-slate-600 font-medium leading-relaxed">
                 No establishments are registered in this barangay yet.
               </p>
             )}
           </Card>
 
-          <Card className="p-6 bg-white rounded-xl">
-            <h3 className="font-bold text-slate-900 mb-5 text-lg tracking-tight">Legend</h3>
-            <div className="space-y-4">
-              {[
-                ...RATING_BANDS.map(b => ({ color: b.color, label: b.label, range: `${b.range}%` })),
-                { color: UNSCORED_COLOR, label: UNSCORED_LABEL, range: "No inspection on record" },
-              ].map(({ color, label, range }) => (
-                <div key={label} className="flex items-center gap-4">
-                  <div className="w-8 h-8 rounded-lg border-[3px] border-white shadow-md flex-shrink-0" style={{ backgroundColor: color }} />
-                  <div>
-                    <p className="text-sm font-bold text-slate-800">{label}</p>
-                    <p className="text-xs text-muted-foreground font-bold">{range}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground font-medium mt-5 leading-relaxed">
-              A barangay is shaded by its worst-rated establishment; darker fill means more
-              establishments registered there.
-            </p>
-          </Card>
-
           {citywide.satisfactory > 0 && (
-            <Card className="p-6 bg-red-50 rounded-xl border border-red-200 shadow-sm">
-              <div className="flex items-center gap-3 mb-3">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
-                <h3 className="font-bold text-red-600 text-lg">Critical Alerts</h3>
-              </div>
-              <p className="text-sm text-slate-700 font-medium leading-relaxed">
+            <div className="flex-shrink-0 flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-sm text-slate-700 font-medium">
+              <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+              <span>
                 <span className="font-black text-slate-900">{citywide.satisfactory}</span> establishment
-                {citywide.satisfactory === 1 ? "" : "s"} citywide scored below {PASSING_SCORE}% on the latest
-                inspection — the lowest rating band.
-              </p>
-            </Card>
-          )}
-
-          {/* [REF: GIS_UNMAPPED]
-              Establishments whose stored barangay matches no official boundary
-              are missing from every count above. Naming them is the only way an
-              admin can fix the underlying record. */}
-          {unmappedTotal > 0 && (
-            <Card className="p-6 bg-amber-50 rounded-xl border border-amber-200 shadow-sm">
-              <div className="flex items-center gap-3 mb-3">
-                <MapPin className="w-5 h-5 text-amber-600" />
-                <h3 className="font-bold text-amber-700 text-base">Not on the map</h3>
-              </div>
-              <p className="text-sm text-slate-700 font-medium leading-relaxed mb-3">
-                <span className="font-black text-slate-900">{unmappedTotal}</span> establishment
-                {unmappedTotal === 1 ? " has" : "s have"} a barangay that matches no official
-                boundary, so {unmappedTotal === 1 ? "it is" : "they are"} excluded from the counts above.
-              </p>
-              <div className="space-y-1">
-                {[...unmapped.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => (
-                  <div key={label} className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-slate-700 truncate">{label}</span>
-                    <span className="font-black text-amber-700 flex-shrink-0 ml-2">{count}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
+                {citywide.satisfactory === 1 ? "" : "s"} below {PASSING_SCORE}% on the latest inspection
+              </span>
+            </div>
           )}
         </div>
       </div>
