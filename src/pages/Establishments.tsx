@@ -9,26 +9,20 @@ import { AddEstablishmentModal } from "@/components/AddEstablishmentModal";
 import { EstablishmentHistoryModal } from "@/components/EstablishmentHistoryModal";
 import { PageStrip } from "@/components/PageStrip";
 import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
-import { byNewestFirst, formatShortDate } from "@/lib/inspectionDates";
-import { UNSCORED_COLOR, ratingBand, ratingColor } from "@/lib/ratingScale";
+import { formatShortDate, latestLogByEstablishment } from "@/lib/inspectionDates";
+import { complianceLabel, ratingColor } from "@/lib/ratingScale";
 import { useAuth } from "@/lib/useAuth";
 
 const PAGE_SIZE = 50;
 
 export function Establishments() {
   const { data, isLoading, error } = useCollection(COLLECTIONS.establishments, mapEstablishment);
-  const { data: logs } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
+  const { data: logs, error: logsError } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
 
   // Newest inspection per establishment, for the date and compliance columns.
-  const latestLog = useMemo(() => {
-    const m = new Map<string, { inspection_date: string | null; percentage_rating: number | null }>();
-    for (const log of logs ?? []) {
-      if (!log.establishment_id) continue;
-      const prev = m.get(log.establishment_id);
-      if (!prev || byNewestFirst(log, prev) < 0) m.set(log.establishment_id, log);
-    }
-    return m;
-  }, [logs]);
+  // `undefined` until the logs land, so the columns wait instead of showing
+  // every row as never inspected for a moment.
+  const latestLog = useMemo(() => (logs ? latestLogByEstablishment(logs) : undefined), [logs]);
   // RLS already refuses a department head's writes; hiding the controls spares
   // them a form whose every save fails.
   const canEdit = useAuth().role === "admin";
@@ -156,7 +150,10 @@ export function Establishments() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {pagedEstablishments.map((establishment) => (
+                {pagedEstablishments.map((establishment) => {
+                  const log = latestLog?.get(establishment.id);
+                  const score = log?.percentage_rating ?? null;
+                  return (
                   // [REF: ESTABLISHMENT_HISTORY_MODAL]
                   // The whole row opens the inspection history. No role="button"
                   // here on purpose — that would replace the row/cell semantics a
@@ -199,32 +196,23 @@ export function Establishments() {
                       {establishment.business_permit_no || establishment.sanitary_permit_no || <span className="text-slate-400">N/A</span>}
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-600 font-medium hidden md:table-cell">
-                      {latestLog.get(establishment.id)?.inspection_date
-                        ? formatShortDate(latestLog.get(establishment.id)!.inspection_date)
+                      {log?.inspection_date
+                        ? formatShortDate(log.inspection_date)
                         : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="py-4 px-6">
-                      {(() => {
-                        const score = latestLog.get(establishment.id)?.percentage_rating ?? null;
-                        // The lowest band is a failing inspection in CHO's
-                        // terms, so it reads "Fail" here rather than "Satisfactory".
-                        const label = score === null ? "Not yet"
-                          : ratingBand(score) === "excellent" ? "Excellent"
-                          : ratingBand(score) === "verySatisfactory" ? "Very Satisfactory" : "Fail";
-                        const color = score === null ? UNSCORED_COLOR : ratingColor(score);
-                        return (
-                          <span
-                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap"
-                            style={{
-                              backgroundColor: `color-mix(in srgb, ${color} 15%, transparent)`,
-                              color,
-                              borderColor: `color-mix(in srgb, ${color} 30%, transparent)`,
-                            }}
-                          >
-                            {label}
-                          </span>
-                        );
-                      })()}
+                      {latestLog && (
+                        <span
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap"
+                          style={{
+                            backgroundColor: `color-mix(in srgb, ${ratingColor(score)} 15%, transparent)`,
+                            color: ratingColor(score),
+                            borderColor: `color-mix(in srgb, ${ratingColor(score)} 30%, transparent)`,
+                          }}
+                        >
+                          {complianceLabel(score)}
+                        </span>
+                      )}
                     </td>
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
@@ -236,10 +224,16 @@ export function Establishments() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          {logsError && (
+            <p className="px-6 py-2 text-xs text-red-700 bg-red-50 border-t border-red-200">
+              Inspection dates and compliance could not be loaded: {logsError.message}
+            </p>
+          )}
           {filtered.length > PAGE_SIZE && (
             <div className="border-t border-border p-3 flex items-center justify-between flex-wrap gap-2">
               <p className="text-sm text-muted-foreground font-medium">

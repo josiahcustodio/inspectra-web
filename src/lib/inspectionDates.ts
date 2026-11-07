@@ -120,6 +120,22 @@ export function byNewestFirst(
   return b.inspection_date.localeCompare(a.inspection_date);
 }
 
+/** Newest log per establishment, by the same rule as byNewestFirst: a dated
+ *  log beats an undated one, and an undated log still counts when it is the
+ *  only one. One helper so the map, the masterlist and the establishments
+ *  list never disagree about which inspection is "the latest". */
+export function latestLogByEstablishment<
+  T extends { establishment_id: string | null; inspection_date: string | null },
+>(logs: readonly T[]): Map<string, T> {
+  const newest = new Map<string, T>();
+  for (const log of logs) {
+    if (!log.establishment_id) continue;
+    const prev = newest.get(log.establishment_id);
+    if (!prev || byNewestFirst(log, prev) < 0) newest.set(log.establishment_id, log);
+  }
+  return newest;
+}
+
 
 // How long ago an inspection happened, in the granularity that actually matters
 // for one: days, not minutes. An inspection is a dated event, so "Yesterday" is

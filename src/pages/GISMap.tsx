@@ -13,7 +13,7 @@ import {
   canonicalBarangay,
   normalizeBarangay,
 } from "@/lib/barangayGeo";
-import { byNewestFirst, relativeInspectionAge } from "@/lib/inspectionDates";
+import { latestLogByEstablishment, relativeInspectionAge } from "@/lib/inspectionDates";
 import {
   PASSING_SCORE,
   RATING_BANDS,
@@ -133,21 +133,7 @@ export function GISMap() {
       return { byBarangay, citywide, unmapped, pins };
     }
 
-    const latestByEst = new Map<string, any>();
-    // Newest log per establishment, compared as ISO-8601 text rather than
-    // through `new Date(...)`. The dates are zone-less wall clocks (see
-    // `[REF: INSPECTION_DATE_CONVENTION]`), so parsing them buys nothing here and
-    // risks a shift; ISO strings already sort chronologically. An undated log
-    // loses to any dated one and never wins on a tie.
-    for (const log of inspectionLogs) {
-      if (!log.establishment_id) continue;
-      const prev = latestByEst.get(log.establishment_id);
-      if (!prev) {
-        latestByEst.set(log.establishment_id, log);
-        continue;
-      }
-      if (byNewestFirst(log, prev) < 0) latestByEst.set(log.establishment_id, log);
-    }
+    const latestByEst = latestLogByEstablishment(inspectionLogs);
 
     // Running totals for the average, kept alongside each bucket so a barangay
     // with no inspected establishment reports null rather than a misleading 0.
@@ -480,7 +466,9 @@ export function GISMap() {
           {/* [REF: GIS_EMPTY_STATE]
               The boundaries always draw, so an empty map means no establishment
               data — say so plainly instead of leaving a blank choropleth. */}
-          {!isLoading && citywide.total === 0 && (
+          {/* Nothing placed on any boundary: either no establishments at all, or
+              none whose barangay resolves. citywide.total counts both. */}
+          {!isLoading && byBarangay.size === 0 && (
             <div className="absolute inset-x-0 bottom-6 z-[1000] flex justify-center px-4 pointer-events-none">
               <div className="pointer-events-auto max-w-lg rounded-xl bg-white/95 backdrop-blur-md shadow-2xl border border-slate-200 px-5 py-4">
                 <div className="flex items-start gap-3">

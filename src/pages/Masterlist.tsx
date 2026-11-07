@@ -34,7 +34,7 @@ import {
   saveEstablishment,
 } from "@/lib/firestore";
 import type { Establishment, InspectionLog } from "@/lib/models";
-import { formatShortDate, isoDatePart } from "@/lib/inspectionDates";
+import { formatShortDate, isoDatePart, latestLogByEstablishment as latestLogByEstablishment_ } from "@/lib/inspectionDates";
 import { toYmd } from "@/lib/import/normalize";
 import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { exportIncludesCategory } from "@/lib/exportPrefs";
@@ -126,20 +126,7 @@ export function Masterlist() {
     }
   };
 
-  // Newest log per establishment. ISO strings sort chronologically as plain
-  // strings (see inspectionDates.ts), so "newest" is a string comparison —
-  // no Date parsing, which would mis-handle the zone-less wall-clock values.
-  const latestLogByEstablishment = useMemo(() => {
-    const newest = new Map<string, InspectionLog>();
-    for (const log of logData ?? []) {
-      if (!log.establishment_id || !log.inspection_date) continue;
-      const current = newest.get(log.establishment_id);
-      if (!current || log.inspection_date.localeCompare(current.inspection_date ?? "") > 0) {
-        newest.set(log.establishment_id, log);
-      }
-    }
-    return newest;
-  }, [logData]);
+  const latestLogByEstablishment = useMemo(() => latestLogByEstablishment_(logData ?? []), [logData]);
 
   // Map first, filter second: the Category column (and its filter) come from
   // the newest inspection log, so the filter needs the derived row, not the

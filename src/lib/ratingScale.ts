@@ -97,6 +97,15 @@ export function ratingColor(score: number | null | undefined): string {
   return ratingBandSpec(score).color;
 }
 
+/** The Establishments list's wording for the latest inspection. The lowest
+ *  band is a failed inspection in the office's own terms, so it reads "Fail"
+ *  there; every other place keeps the band's formal label. Kept here so the
+ *  two wordings cannot drift apart from the bands themselves. */
+export function complianceLabel(score: number | null | undefined): string {
+  if (score === null || score === undefined) return UNSCORED_LABEL;
+  return ratingBand(score) === "satisfactory" ? "Fail" : ratingLabel(score);
+}
+
 /** True when a score sits in the lowest band — the one that needs follow-up. */
 export function isHighRisk(score: number): boolean {
   return score < PASSING_SCORE;
