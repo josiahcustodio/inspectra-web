@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Building2, ClipboardCheck, AlertTriangle } from "lucide-react";
+import { Building2, ClipboardCheck, AlertTriangle, MapPin } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -14,7 +14,7 @@ import {
   Cell,
 } from "recharts";
 import { BarangaySummaryDialog } from "@/components/BarangaySummaryDialog";
-import { barangayOfEstablishment } from "@/lib/complianceReportScope";
+import { BARANGAY_NAMES, barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { useCollection } from "@/lib/useCollection";
 import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/firestore";
 import {
@@ -23,6 +23,7 @@ import {
   emptyBandCounts,
   isHighRisk,
   ratingBand,
+  ratingColor,
 } from "@/lib/ratingScale";
 
 // [REF: CARD_SURFACE_STYLE]
@@ -43,15 +44,20 @@ export function Dashboard() {
     if (!establishments || !inspectionLogs) {
       return {
         inspectedBarangays: 0,
+        totalBarangays: BARANGAY_NAMES.length,
+        inspectedEstablishments: 0,
+        totalEstablishments: 0,
+        scoredInspections: 0,
         complianceRating: "0%",
         highRiskBarangays: 0,
         gradeData: RATING_BANDS.map(b => ({
           name: b.label,
           range: b.range,
           value: 0,
+          count: 0,
           color: b.color,
         })),
-        barangayData: []
+        barangayData: [] as { name: string; avg: number; count: number; color: string }[],
       };
     }
 
@@ -60,13 +66,14 @@ export function Dashboard() {
     // [REF: RATING_SCALE] one tally per band, keyed by the shared band ids
     const bandCounts = emptyBandCounts();
 
-    const barangayFailures: Record<string, number> = {};
     const barangayScores: Record<string, { total: number, count: number }> = {};
-    const inspectedBarangaysSet = new Set<string>();
+    const inspectedEstablishments = new Set<string>();
 
+    // Official spelling only, so a barangay counts once however the record
+    // spells it, and an unresolvable address is left out of the fraction.
     const estToBrgy = new Map<string, string>();
     for (const est of establishments) {
-      const brgy = barangayOfEstablishment(est);
+      const brgy = canonicalBarangay(barangayOfEstablishment(est));
       if (brgy) estToBrgy.set(est.id, brgy);
     }
 
@@ -79,22 +86,17 @@ export function Dashboard() {
 
       bandCounts[ratingBand(score)]++;
 
+      if (log.establishment_id) inspectedEstablishments.add(log.establishment_id);
       const brgy = log.establishment_id ? estToBrgy.get(log.establishment_id) : null;
-      const validBrgy = brgy || "Unknown";
-      
-      inspectedBarangaysSet.add(validBrgy);
+      if (!brgy) continue;
 
-      if (isHighRisk(score)) {
-        barangayFailures[validBrgy] = (barangayFailures[validBrgy] || 0) + 1;
-      }
-
-      if (!barangayScores[validBrgy]) barangayScores[validBrgy] = { total: 0, count: 0 };
-      barangayScores[validBrgy].total += score;
-      barangayScores[validBrgy].count += 1;
+      if (!barangayScores[brgy]) barangayScores[brgy] = { total: 0, count: 0 };
+      barangayScores[brgy].total += score;
+      barangayScores[brgy].count += 1;
     }
 
     const avgCompliance = countScore > 0 ? Math.round(totalScore / countScore) : 0;
-    
+
     let highRiskCount = 0;
     for (const [brgy, s] of Object.entries(barangayScores)) {
       if (s.count > 0 && isHighRisk(s.total / s.count)) {
@@ -102,27 +104,42 @@ export function Dashboard() {
       }
     }
 
-    const topNonCompliant = Object.entries(barangayFailures)
-      .map(([name, violations]) => ({ name, violations }))
-      .sort((a, b) => b.violations - a.violations)
+    // Lowest average first; the bar takes the colour of the band the average
+    // falls in, so a red bar is a barangay averaging below passing.
+    const lowestAverage = Object.entries(barangayScores)
+      .map(([name, s]) => ({
+        name,
+        avg: Math.round(s.total / s.count),
+        count: s.count,
+        color: ratingColor(s.total / s.count),
+      }))
+      .sort((a, b) => a.avg - b.avg || b.count - a.count)
       .slice(0, 6);
 
-
     return {
-      inspectedBarangays: inspectedBarangaysSet.size,
+      inspectedBarangays: Object.keys(barangayScores).length,
+      totalBarangays: BARANGAY_NAMES.length,
+      inspectedEstablishments: inspectedEstablishments.size,
+      totalEstablishments: establishments.length,
+      scoredInspections: countScore,
       complianceRating: `${avgCompliance}%`,
       highRiskBarangays: highRiskCount,
       gradeData: RATING_BANDS.map(b => ({
         name: b.label,
         range: b.range,
         value: countScore > 0 ? Math.round((bandCounts[b.band] / countScore) * 100) : 0,
+        count: bandCounts[b.band],
         color: b.color,
       })),
-      barangayData: topNonCompliant.length > 0 ? topNonCompliant : [{ name: "No data", violations: 0 }]
+      barangayData: lowestAverage,
     };
   }, [establishments, inspectionLogs]);
 
-  const { inspectedBarangays, complianceRating, highRiskBarangays, gradeData, barangayData } = stats;
+  const {
+    inspectedBarangays, totalBarangays, inspectedEstablishments, totalEstablishments,
+    scoredInspections, complianceRating, highRiskBarangays, gradeData, barangayData,
+  } = stats;
+  const pct = (n: number, d: number) => (d > 0 ? Math.min(100, (n / d) * 100) : 0);
 
   const chartData = gradeData.filter(d => d.value > 0);
   const chartPadding = chartData.length > 1 ? 4 : 0;
@@ -142,21 +159,49 @@ export function Dashboard() {
       </div>
 
       {/* Bento Grid Layer 1 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-shrink-0">
-        
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-shrink-0">
+
         {/* KPI 1 */}
         <div className={`col-span-1 p-4 flex flex-col justify-between ${glassCard}`}>
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Total Inspected Barangays</p>
-              <h3 className="text-5xl font-black text-slate-900">{inspectedBarangays}</h3>
+              <p className="text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Inspected Barangays</p>
+              <h3 className="text-5xl font-black text-slate-900 tabular-nums">
+                {inspectedBarangays}
+                <span className="text-xl font-bold text-slate-400"> / {totalBarangays}</span>
+              </h3>
             </div>
             <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100">
-              <Building2 className="w-4 h-4 text-indigo-600" />
+              <MapPin className="w-4 h-4 text-indigo-600" />
             </div>
           </div>
-          <div className="mt-2 flex items-center gap-1">
-            <span className="text-xs text-muted-foreground font-bold">Across Batangas City</span>
+          <div className="mt-2">
+            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden" role="progressbar" aria-valuenow={inspectedBarangays} aria-valuemax={totalBarangays}>
+              <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${pct(inspectedBarangays, totalBarangays)}%` }} />
+            </div>
+            <span className="text-xs text-muted-foreground font-bold">{Math.round(pct(inspectedBarangays, totalBarangays))}% of Batangas City</span>
+          </div>
+        </div>
+
+        {/* KPI 1b: establishments reached */}
+        <div className={`col-span-1 p-4 flex flex-col justify-between ${glassCard}`}>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Inspected Establishments</p>
+              <h3 className="text-5xl font-black text-slate-900 tabular-nums">
+                {inspectedEstablishments}
+                <span className="text-xl font-bold text-slate-400"> / {totalEstablishments.toLocaleString()}</span>
+              </h3>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-sky-50 flex items-center justify-center border border-sky-100">
+              <Building2 className="w-4 h-4 text-sky-600" />
+            </div>
+          </div>
+          <div className="mt-2">
+            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden" role="progressbar" aria-valuenow={inspectedEstablishments} aria-valuemax={totalEstablishments}>
+              <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${pct(inspectedEstablishments, totalEstablishments)}%` }} />
+            </div>
+            <span className="text-xs text-muted-foreground font-bold">{pct(inspectedEstablishments, totalEstablishments).toFixed(1)}% of the masterlist</span>
           </div>
         </div>
 
@@ -196,13 +241,13 @@ export function Dashboard() {
 
       {/* Lower Section */}
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
-        
+
         {/* Main Chart spanning 7 cols */}
         <div className={`col-span-1 lg:col-span-7 flex flex-col ${glassCard} p-4 min-h-0`}>
           <div className="mb-2 flex-shrink-0 flex items-center justify-between">
             <div>
-              <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Top Non-Compliant Barangays</h3>
-              <p className="text-sm text-muted-foreground truncate font-medium">Barangays with the highest recurring violations this month.</p>
+              <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Barangays with Lowest Average Compliance</h3>
+              <p className="text-sm text-muted-foreground truncate font-medium">Average sanitary rating per barangay across all inspections, lowest first.</p>
             </div>
           </div>
           <div className="flex-1 min-h-0 w-full">
@@ -211,7 +256,7 @@ export function Dashboard() {
               <BarChart data={barangayData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                 <XAxis dataKey="name" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={60} />
-                <YAxis stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} unit="%" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   cursor={{ fill: '#f1f5f9', opacity: 0.4 }}
                   contentStyle={{
@@ -222,8 +267,16 @@ export function Dashboard() {
                     color: "#0f172a"
                   }}
                   itemStyle={{ color: '#0f172a', fontWeight: 'bold' }}
+                  formatter={(value, _name, item) => [
+                    `${value}% average over ${item.payload.count} inspection${item.payload.count === 1 ? "" : "s"}`,
+                    "Compliance",
+                  ]}
                 />
-                <Bar dataKey="violations" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
+                  {barangayData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -231,19 +284,23 @@ export function Dashboard() {
 
         {/* Right Side spanning 5 cols */}
         <div className="col-span-1 lg:col-span-5 flex flex-col gap-4 min-h-0">
-          
+
           {/* Grade Distribution */}
           <div className={`flex-1 flex flex-col ${glassCard} p-6 min-h-0`}>
             <div className="mb-6 flex-shrink-0">
               <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">City-Wide Clearance Level</h3>
-              <p className="text-sm text-muted-foreground truncate font-medium mt-1">Share of inspections in each sanitary rating band.</p>
+              <p className="text-sm text-muted-foreground truncate font-medium mt-1">Inspections in each sanitary rating band, count and share.</p>
             </div>
-            
+
             {/* Horizontal Split Layout */}
             <div className="flex-1 flex flex-row items-center justify-between min-h-0 gap-8 px-2">
-              
+
               {/* Left: Donut Chart with fixed aspect ratio */}
-              <div className="w-[120px] h-[120px] aspect-square flex-shrink-0">
+              <div className="relative w-[120px] h-[120px] aspect-square flex-shrink-0">
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-2xl font-black text-slate-900 tabular-nums leading-none">{scoredInspections}</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">rated</span>
+                </div>
                 <ResponsiveContainer width="100%" height="100%">
                   {/* [REF: PIE_GRAPH] */}
                   <PieChart>
@@ -284,7 +341,10 @@ export function Dashboard() {
                         <p className="text-xs font-bold text-muted-foreground">{item.range}</p>
                       </div>
                     </div>
-                    <span className="text-base font-black text-slate-900">{item.value}%</span>
+                    <span className="text-base font-black text-slate-900 tabular-nums whitespace-nowrap">
+                      {item.count}
+                      <span className="text-sm font-bold text-slate-400"> &middot; {item.value}%</span>
+                    </span>
                   </div>
                 ))}
               </div>

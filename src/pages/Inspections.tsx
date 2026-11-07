@@ -19,6 +19,7 @@ import {
 import type { InspectionLog } from "@/lib/models";
 import { UNSCORED_LOG_LABEL, ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { byNewestFirst, isoDatePart, isoTimePart } from "@/lib/inspectionDates";
+import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 
 function getStatusColor(status: string) {
   switch (status) {
@@ -44,6 +45,7 @@ const PAGE_SIZE = 20;
 
 interface InspectionRow extends InspectionLog {
   establishmentName: string;
+  barangay: string | null;
   inspectorName: string;
   ratingBandLabel: string | null;
   score: number | null;
@@ -66,12 +68,17 @@ export function Inspections() {
     const nameById = new Map(
       (establishments ?? []).map((e) => [e.id, e.business_name] as const)
     );
+    // Official spelling, the same resolution the dashboard and map use.
+    const brgyById = new Map(
+      (establishments ?? []).map((e) => [e.id, canonicalBarangay(barangayOfEstablishment(e))] as const)
+    );
 
     const rows = logs.map((i): InspectionRow => ({
       ...i,
       establishmentName:
         (i.establishment_id ? nameById.get(i.establishment_id) : null) ||
         "Unknown Establishment",
+      barangay: (i.establishment_id ? brgyById.get(i.establishment_id) : null) ?? null,
       inspectorName: i.inspector_name || "Unknown Inspector",
       // [REF: RATING_SCALE] band label and colour both come from the shared scale.
       // `== null` catches undefined too — see getStatus above.
@@ -87,14 +94,44 @@ export function Inspections() {
     return rows;
   }, [logs, establishments]);
 
+  // [REF: INSPECTION_FILTERS]
+  // All client-side over the live snapshot, like the establishments list.
+  // Dates compare on the calendar day the row already displays.
+  const [search, setSearch] = useState("");
+  const [barangayFilter, setBarangayFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const hasFilter = search !== "" || barangayFilter !== "all" || dateFrom !== "" || dateTo !== "";
+  const clearFilters = () => {
+    setSearch(""); setBarangayFilter("all"); setDateFrom(""); setDateTo(""); setPage(1);
+  };
+
+  const barangayOptions = useMemo(
+    () => [...new Set(inspections.map((r) => r.barangay).filter((b): b is string => !!b))]
+      .sort((a, b) => a.localeCompare(b, "en", { numeric: true })),
+    [inspections],
+  );
+
+  const needle = search.trim().toLowerCase();
+  const filtered = useMemo(
+    () => inspections.filter((r) =>
+      (barangayFilter === "all" || r.barangay === barangayFilter) &&
+      (dateFrom === "" || r.date >= dateFrom) &&
+      (dateTo === "" || r.date <= dateTo) &&
+      (needle === "" ||
+        r.establishmentName.toLowerCase().includes(needle) ||
+        r.inspectorName.toLowerCase().includes(needle))),
+    [inspections, barangayFilter, dateFrom, dateTo, needle],
+  );
+
   // [REF: INSPECTION_PAGINATION]
   // Client-side pagination over the live snapshot: 20 records per page. The
   // page index is clamped rather than reset so a live update (a new record
   // arriving) doesn't yank the reader back to page 1.
-  const [page, setPage] = useState(1);
-  const pageCount = Math.max(1, Math.ceil(inspections.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
-  const pagedInspections = inspections.slice(
+  const pagedInspections = filtered.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
@@ -131,10 +168,56 @@ export function Inspections() {
         </div>
       </div>
 
+      {inspections.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search establishment or inspector…"
+            className="w-72 text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900"
+          />
+          <select
+            aria-label="Filter by barangay"
+            value={barangayFilter}
+            onChange={(e) => { setBarangayFilter(e.target.value); setPage(1); }}
+            className="text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900 max-w-56"
+          >
+            <option value="all">All barangays</option>
+            {barangayOptions.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            From
+            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              className="text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900" />
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            To
+            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              className="text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900" />
+          </label>
+          {hasFilter && (
+            <button type="button" onClick={clearFilters} className="text-sm font-bold text-primary hover:underline">
+              Clear
+            </button>
+          )}
+          <span className="text-sm text-muted-foreground font-medium ml-auto tabular-nums">
+            {filtered.length} inspection{filtered.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      )}
+
       {inspections.length === 0 ? (
         <Card className="p-12 bg-white rounded-xl  text-center">
           <p className="text-muted-foreground font-bold">No inspections yet.</p>
           <p className="text-sm text-muted-foreground font-medium mt-1">Records appear here live as soon as field inspectors submit them.</p>
+        </Card>
+      ) : filtered.length === 0 ? (
+        <Card className="p-12 bg-white rounded-xl text-center">
+          <p className="text-muted-foreground font-bold">No inspections match these filters.</p>
+          <button type="button" onClick={clearFilters} className="text-sm font-bold text-primary hover:underline mt-1">Clear filters</button>
         </Card>
       ) : (
         <Card className="overflow-hidden bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border">
@@ -173,9 +256,14 @@ export function Inspections() {
                         <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
                           <ClipboardCheck className="w-4 h-4 text-primary" />
                         </div>
-                        <span className="font-bold text-slate-900 text-sm truncate" title={inspection.establishmentName}>
-                          {inspection.establishmentName}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="block font-bold text-slate-900 text-sm truncate" title={inspection.establishmentName}>
+                            {inspection.establishmentName}
+                          </span>
+                          {inspection.barangay && (
+                            <span className="block text-xs text-muted-foreground font-medium truncate">{inspection.barangay}</span>
+                          )}
+                        </div>
                         <span className="sr-only">— press Enter to view inspection details</span>
                       </div>
                     </td>
@@ -222,10 +310,10 @@ export function Inspections() {
       )}
 
       {/* Pager */}
-      {inspections.length > PAGE_SIZE && (
+      {filtered.length > PAGE_SIZE && (
         <div className="flex items-center justify-between flex-wrap gap-3">
           <p className="text-sm text-muted-foreground font-medium">
-            Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, inspections.length)} of {inspections.length} inspections
+            Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} inspections
           </p>
           <PageStrip
             current={currentPage}
