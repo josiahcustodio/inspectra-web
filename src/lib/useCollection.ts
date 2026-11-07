@@ -25,6 +25,12 @@ export interface CollectionState<T> {
 // that always needs its table reads exactly as before; pass false to keep the
 // channel closed until the UI that depends on it actually exists — a modal
 // that has never been opened should not be holding a live query open.
+// Last snapshot per table, kept for the life of the tab. Every portal page
+// reads establishments, and without this each navigation re-downloaded all
+// 5,000+ rows and showed zeroes until they arrived. A page now renders the
+// previous snapshot at once and the refetch below replaces it when it lands.
+const lastRows = new Map<string, any[]>();
+
 export function useCollection<T>(
   path: string,
   map: (id: string, data: any) => T,
@@ -37,10 +43,11 @@ export function useCollection<T>(
   // object, avoids a teardown/resubscribe race and a full re-download each
   // refresh.
   const userId = user?.id ?? null;
-  const [state, setState] = useState<CollectionState<T>>({
-    data: undefined,
-    isLoading: true,
-    error: null,
+  const [state, setState] = useState<CollectionState<T>>(() => {
+    const cached = lastRows.get(path);
+    return cached
+      ? { data: cached.map((r) => map(r.id, r)), isLoading: true, error: null }
+      : { data: undefined, isLoading: true, error: null };
   });
 
   // Callers may pass an inline mapper; keep the latest one without letting its
@@ -61,12 +68,13 @@ export function useCollection<T>(
     // rows); coalesce them into one refetch per tick instead of one each.
     let refetchTimer: ReturnType<typeof setTimeout> | undefined;
 
-    setState({ data: undefined, isLoading: true, error: null });
+    setState((prev) => ({ data: prev.data, isLoading: true, error: null }));
 
     const refetch = async () => {
       try {
         const rows = await fetchAllRows(path);
         if (cancelled) return;
+        lastRows.set(path, rows);
         setState({
           data: rows.map((r) => mapRef.current(r.id, r)),
           isLoading: false,
@@ -75,7 +83,8 @@ export function useCollection<T>(
       } catch (error: any) {
         if (cancelled) return;
         console.error(`Live query for "${path}" failed:`, error);
-        setState({ data: [], isLoading: false, error });
+        // Keep whatever was on screen; `error` tells the page what happened.
+        setState((prev) => ({ data: prev.data ?? [], isLoading: false, error }));
       }
     };
 

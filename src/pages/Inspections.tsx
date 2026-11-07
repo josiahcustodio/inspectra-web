@@ -56,7 +56,7 @@ interface InspectionRow extends InspectionLog {
 
 export function Inspections() {
   // [REF: INSPECTION_LIST]
-  const { data: logs } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
+  const { data: logs, error: loadError } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
   const { data: establishments } = useCollection(COLLECTIONS.establishments, mapEstablishment);
 
   const inspections = useMemo(() => {
@@ -209,7 +209,15 @@ export function Inspections() {
         </div>
       )}
 
-      {inspections.length === 0 ? (
+      {logs === undefined ? (
+        <Card className="p-12 bg-white rounded-xl text-center">
+          {loadError ? (
+            <p className="text-sm text-red-700">Could not load inspections: {loadError.message}</p>
+          ) : (
+            <div className="w-8 h-8 mx-auto border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+          )}
+        </Card>
+      ) : inspections.length === 0 ? (
         <Card className="p-12 bg-white rounded-xl  text-center">
           <p className="text-muted-foreground font-bold">No inspections yet.</p>
           <p className="text-sm text-muted-foreground font-medium mt-1">Records appear here live as soon as field inspectors submit them.</p>

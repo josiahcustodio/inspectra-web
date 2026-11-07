@@ -36,8 +36,9 @@ export function Dashboard() {
   // Live table subscriptions (Supabase Realtime) — both stay `undefined` until their first
   // snapshot lands, which is what keeps the KPI block showing zeroes instead of
   // a half-computed figure while the data is still in flight.
-  const { data: establishments } = useCollection(COLLECTIONS.establishments, mapEstablishment);
-  const { data: inspectionLogs } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
+  const { data: establishments, error: estError } = useCollection(COLLECTIONS.establishments, mapEstablishment);
+  const { data: inspectionLogs, error: logError } = useCollection(COLLECTIONS.inspectionLogs, mapInspectionLog);
+  const loadError = estError ?? logError;
 
   // [REF: KPI_STATS]
   const stats = useMemo(() => {
@@ -144,6 +145,23 @@ export function Dashboard() {
   const chartData = gradeData.filter(d => d.value > 0);
   const chartPadding = chartData.length > 1 ? 4 : 0;
 
+  // Zeroes while the tables download read as "no data", so hold a spinner
+  // until both snapshots exist, and say so when a read failed.
+  if (!establishments || !inspectionLogs) {
+    return (
+      <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-center">
+        {loadError ? (
+          <p className="text-sm text-red-700">Could not load the dashboard: {loadError.message}</p>
+        ) : (
+          <>
+            <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+            <p className="text-sm text-muted-foreground font-medium">Loading inspections and establishments…</p>
+          </>
+        )}
+      </div>
+    );
+  }
+
 
 
   return (
@@ -157,6 +175,12 @@ export function Dashboard() {
         {/* [REF: AI_BARANGAY_SUMMARY] */}
         <BarangaySummaryDialog establishments={establishments} logs={inspectionLogs} />
       </div>
+
+      {loadError && (
+        <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex-shrink-0">
+          Showing the last loaded figures. Refresh failed: {loadError.message}
+        </p>
+      )}
 
       {/* Bento Grid Layer 1 */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-shrink-0">
