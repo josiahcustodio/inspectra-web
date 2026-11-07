@@ -137,7 +137,7 @@ const BY_NORMALIZED = new Map<string, string>(
 /// letters, which is what lets the "Poblacio 009" typo in the real file through
 /// to the right place. Nothing resolves unless the resulting "barangay N" is a
 /// real boundary, so "Poblacion 099" still comes back unmapped.
-const POBLACION_PATTERN = /^poblaci\w*\s*0*(\d+)$/;
+const POBLACION_PATTERN = /^(?:poblaci\w*|brgy|bgy)\s*0*(\d+)$/;
 
 /// One normalised key -> official name: alias, then the numbered-poblacion
 /// rule, then the boundary set itself. Shared by the whole-value path and the
