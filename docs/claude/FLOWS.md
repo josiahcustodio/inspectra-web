@@ -121,6 +121,6 @@ Not captured: failed sign-ins, mobile sign-ins, department_head read access.
   `/sync` when the AAL1 profile read returns null (router order fix reported applied, unverified on device). Home "Recent Activity" may stay empty after a submit.
 - Web: Inspections detail SO blank name/address; Inspectors undated-log period bug; owner home shows UTC date; no 404; tab title.
 - Backend: `01/02_*.sql` rebuild scripts stale vs live (missing SQL 10–12); `provision-owner` + `owner_access_rejections` unused; signature columns/bucket kept until all devices ≥ b4;
-  Brevo authorized-IP fragility (Supabase egress 52.74.233.1); second admin `noniekinyo@gmail.com` not MFA-enrolled; `testuser@gmail.com` auth user with no profile row.
+  Brevo authorized-IP whitelist must be updated if the Supabase egress IP changes.
 - Data: duplicate category "Food" (ids 1 and 9); categories 17/23/24 weight 0 until CHO supplies weights; OSM_SEED demo rows still live.
 - Process: Supabase PATs are revoked after each use (assume `migration/.env` PAT is dead); Firebase project deletion due ~2026-11-10.

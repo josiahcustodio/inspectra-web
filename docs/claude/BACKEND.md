@@ -222,8 +222,8 @@ Owners and pending users have no storage access.
 - Email confirmation required (`mailer_autoconfirm=false`); TOTP MFA enroll+verify enabled.
 - `site_url = https://www.inspectra-cho.com`; allow list adds `https://inspectra-web.onrender.com/**` and `http://localhost:5173/**`.
 - Sign-ups stay enabled: mobile inspector onboarding is self-signup → `pending` → admin promotes in web Access page.
-- Google OAuth: web client enabled (GCP project `cityhealth-492614`); Android OAuth client never created, so device Google sign-in is not working.
-- SMTP: Brevo `smtp-relay.brevo.com:587`, OTP length 6, subject "Your Inspectra login code", rate 60/h. Brevo "Authorized IPs" is ON with Supabase egress `52.74.233.1` whitelisted; if Supabase egress changes, OTP emails fail with `525 5.7.1 Unauthorized IP address` (fix in Brevo Settings → Security → Authorized IPs).
+- Google OAuth: a web client is configured but no client uses it; the Android OAuth client was never created.
+- SMTP: Brevo `smtp-relay.brevo.com:587`, OTP length 6, subject "Your Inspectra login code", rate 60/h. Brevo "Authorized IPs" is ON with the Supabase egress IP whitelisted; if Supabase egress changes, OTP emails fail with `525 5.7.1 Unauthorized IP address` (fix in Brevo Settings → Security → Authorized IPs).
 - Email templates in `supabase/templates/` (pushed via Management API `PATCH /config/auth`). Links are **plain text, not `<a>` tags**, because Brevo click tracking cannot be disabled and its redirect host times out:
   - `confirm-signup.html` → Confirm signup; shows `{{ .ConfirmationURL }}` text and a `{{ .Token }}` code box (owner first OTP sign-in).
   - `invite.html` → Invite user; `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=invite`.
