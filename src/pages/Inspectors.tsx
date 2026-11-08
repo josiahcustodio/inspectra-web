@@ -346,7 +346,7 @@ export function Inspectors() {
               {detailRows.length} shown
             </span>
           </div>
-          <div className="overflow-y-auto -mx-6 px-6 flex-1 min-h-0">
+          <div className="overflow-auto -mx-6 px-6 flex-1 min-h-0">
             {detailRows.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">No inspections match.</p>
             ) : (

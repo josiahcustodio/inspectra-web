@@ -171,7 +171,7 @@ export function Dashboard() {
   return (
     <div className="h-full w-full flex flex-col gap-4 max-w-7xl mx-auto">
       {/* Header section */}
-      <div className="flex-shrink-0 flex items-start justify-between gap-4">
+      <div className="flex-shrink-0 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 mb-1">Establishments Overview</h1>
           <p className="text-muted-foreground font-medium text-sm">Welcome back. Here's what's happening today in Batangas City.</p>

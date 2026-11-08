@@ -336,7 +336,7 @@ export function Masterlist() {
           value={search}
           onChange={(e) => { setSearch(e.target.value); resetPage(); }}
           placeholder="Search name, owner, permit no., address…"
-          className="w-72 text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900"
+          className="w-full sm:w-72 text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900"
         />
         <select
           value={groupFilter}

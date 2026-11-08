@@ -175,7 +175,7 @@ export function Inspections() {
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search establishment or inspector…"
-            className="w-72 text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900"
+            className="w-full sm:w-72 text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900"
           />
           <select
             aria-label="Filter by barangay"

@@ -81,7 +81,7 @@ export function Establishments() {
 
   return (
     <div className="flex flex-col h-full gap-6">
-      <div className="flex items-center justify-between flex-shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-3 flex-shrink-0">
         <div>
           <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Establishments</h2>
           <p className="text-muted-foreground mt-1 text-sm font-medium">Manage all registered establishments</p>
@@ -99,7 +99,7 @@ export function Establishments() {
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search name, owner, permit no.…"
-          className="w-72 text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900"
+          className="w-full sm:w-72 text-sm font-medium border border-border rounded-lg px-3 py-2 bg-white text-slate-900"
         />
         <select
           aria-label="Filter by barangay"

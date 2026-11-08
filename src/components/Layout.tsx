@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router";
+import { Outlet, NavLink, useNavigate, useLocation } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useConnection } from "@/lib/ConnectionProvider";
 import { useAuth } from "@/lib/useAuth";
@@ -51,6 +51,12 @@ export function Layout() {
   const { role, user } = useAuth();
   const navigate = useNavigate();
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+  // Below lg the sidebar is an overlay drawer, closed by default so tablets
+  // get the full width for content. Navigating closes it.
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const { pathname } = useLocation();
+  const [drawerPath, setDrawerPath] = useState(pathname);
+  if (drawerPath !== pathname) { setDrawerPath(pathname); setIsDrawerOpen(false); }
 
   // [REF: ROLE_NAV]
   //
@@ -70,17 +76,35 @@ export function Layout() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50">
-      {/* Sidebar */}
-      <aside className={`${isSidebarExpanded ? "w-64" : "w-[60px]"} bg-white flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10 transition-all duration-300 relative`}>
-        <div className={`p-6 flex items-center ${isSidebarExpanded ? "justify-between" : "justify-center"}`}>
-          {isSidebarExpanded && (
-            <h1 className="font-bold text-slate-900 tracking-tight text-base leading-tight">
-              Batangas City<br/>City Health Office
-            </h1>
-          )}
-          <button 
+      {/* Drawer backdrop (tablet / phone only) */}
+      {isDrawerOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-slate-900/40 lg:hidden"
+          onClick={() => setIsDrawerOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      {/* Sidebar: fixed overlay drawer below lg, static collapsible column at lg+ */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-30 w-64 transform transition-all duration-300 ${isDrawerOpen ? "translate-x-0" : "-translate-x-full"}
+          lg:static lg:translate-x-0 ${isSidebarExpanded ? "lg:w-64" : "lg:w-[60px]"}
+          bg-white flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}
+      >
+        <div className={`p-6 flex items-center justify-between ${isSidebarExpanded ? "" : "lg:justify-center"}`}>
+          <h1 className={`font-bold text-slate-900 tracking-tight text-base leading-tight ${isSidebarExpanded ? "" : "lg:hidden"}`}>
+            Batangas City<br/>City Health Office
+          </h1>
+          <button
+            onClick={() => setIsDrawerOpen(false)}
+            aria-label="Close menu"
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors flex-shrink-0 lg:hidden"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
             onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
-            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors flex-shrink-0"
+            aria-label={isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors flex-shrink-0 hidden lg:block"
           >
             {isSidebarExpanded ? <ChevronLeft className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -96,11 +120,11 @@ export function Layout() {
                   isActive
                     ? "bg-primary text-primary-foreground shadow-md"
                     : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-                } ${!isSidebarExpanded && "justify-center px-0"}`
+                } ${!isSidebarExpanded && "lg:justify-center lg:px-0"}`
               }
             >
               <item.icon className="w-5 h-5 flex-shrink-0" />
-              {isSidebarExpanded && <span className="truncate">{item.label}</span>}
+              <span className={`truncate ${isSidebarExpanded ? "" : "lg:hidden"}`}>{item.label}</span>
             </NavLink>
           ))}
         </nav>
@@ -109,7 +133,14 @@ export function Layout() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
         {/* Header */}
-        <header className="bg-white px-8 py-4 flex items-center justify-end shadow-[0_4px_24px_rgba(0,0,0,0.02)] z-10">
+        <header className="bg-white px-4 md:px-8 py-4 flex items-center justify-between lg:justify-end shadow-[0_4px_24px_rgba(0,0,0,0.02)] z-10">
+          <button
+            onClick={() => setIsDrawerOpen(true)}
+            aria-label="Open menu"
+            className="p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors lg:hidden"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
           <div className="flex items-center gap-4">
             {!isOnline && (
               <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-bold border border-amber-100">
@@ -152,7 +183,7 @@ export function Layout() {
               show and nothing can be saved — say so plainly rather than letting
               screens look empty. */}
           {!isOnline && (
-            <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5 flex items-center gap-3">
+            <div className="bg-amber-50 border-b border-amber-200 px-4 md:px-8 py-2.5 flex items-center gap-3">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
               <p className="text-sm text-amber-800 font-medium">
                 You are offline. This app needs an internet connection — records won't load or save until you reconnect.
@@ -162,7 +193,7 @@ export function Layout() {
           {/* The shell (html/body and every ancestor here) is overflow-hidden;
               this wrapper is the ONE scroll container for page content, so
               anything taller than the viewport scrolls here. */}
-          <div className="p-6 flex-1 overflow-y-auto min-h-0">
+          <div className="p-4 md:p-6 flex-1 overflow-y-auto min-h-0">
             <Outlet />
           </div>
         </main>

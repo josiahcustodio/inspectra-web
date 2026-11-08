@@ -387,7 +387,7 @@ export function GISMap() {
 
   return (
     <div className="h-full flex flex-col gap-4">
-      <div className="flex items-center justify-between flex-shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-3 flex-shrink-0">
         <div>
           <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Live City Health Monitor</h2>
           <p className="text-muted-foreground mt-1 font-medium">
