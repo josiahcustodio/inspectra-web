@@ -160,8 +160,8 @@ export function Inspections() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full gap-6">
+      <div className="flex items-center justify-between flex-shrink-0">
         <div>
           <h2 className="font-bold text-slate-900 text-2xl tracking-tight">Inspections</h2>
           <p className="text-muted-foreground mt-1">View and manage inspection records</p>
@@ -169,7 +169,7 @@ export function Inspections() {
       </div>
 
       {inspections.length > 0 && (
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
           <input
             type="search"
             value={search}
@@ -228,11 +228,12 @@ export function Inspections() {
           <button type="button" onClick={clearFilters} className="text-sm font-bold text-primary hover:underline mt-1">Clear filters</button>
         </Card>
       ) : (
-        <Card className="overflow-hidden bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border">
-          <div className="overflow-x-auto">
+        <Card className="flex-1 min-h-0 overflow-hidden flex flex-col gap-0 bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border">
+          {/* Keyed by page so a new page starts scrolled to the top. */}
+          <div key={currentPage} className="flex-1 overflow-auto min-h-0">
             {/* table-fixed keeps every column at the same position on every page. */}
             <table className="w-full min-w-[60rem] table-fixed text-left border-collapse">
-              <thead className="bg-white border-b border-border">
+              <thead className="sticky top-0 bg-white z-10 shadow-sm border-b border-border">
                 <tr>
                   <th className="py-3 px-4 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Establishment</th>
                   <th className="py-3 px-4 w-56 text-[10px] font-extrabold tracking-wider text-slate-500 uppercase">Rating</th>
@@ -319,7 +320,7 @@ export function Inspections() {
 
       {/* Pager */}
       {filtered.length > PAGE_SIZE && (
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center justify-between flex-wrap gap-3 flex-shrink-0">
           <p className="text-sm text-muted-foreground font-medium">
             Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} inspections
           </p>

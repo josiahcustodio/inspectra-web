@@ -193,7 +193,7 @@ export function Layout() {
           {/* The shell (html/body and every ancestor here) is overflow-hidden;
               this wrapper is the ONE scroll container for page content, so
               anything taller than the viewport scrolls here. */}
-          <div className="p-4 md:p-6 flex-1 overflow-y-auto min-h-0">
+          <div className="p-4 md:p-6 flex-1 overflow-y-auto overscroll-contain min-h-0">
             <Outlet />
           </div>
         </main>
