@@ -18,7 +18,7 @@ src/main.tsx            purgeLegacyOfflineStorage() → <AuthProvider><Connectio
 src/App.tsx             <RouterProvider router/>
 src/routes.tsx          route table (below)
 src/components/
-  AuthGuard.tsx         session/MFA/email/role gate; admin without TOTP → /admin/settings
+  AuthGuard.tsx         session/MFA/email/role gate; admin/head without TOTP → their settings page
   Layout.tsx            shell: sidebar (drawer < lg), role-prefixed nav, offline banner, account menu, sign out
   PageStrip.tsx         pagination control (uses lib/pagination pageNumbers)
   InspectionChecklistView.tsx  read-only log detail: rating, demerits, SO (if so_issued_at), remarks, results by sub_category; answerKind()
@@ -81,10 +81,9 @@ RLS is the real enforcement (department_head writes fail server-side).
 - Login: password → if AAL1 + factor, same page shows 6-digit OTP pane (`listFactors().totp[0]` → `challengeAndVerifyTotp`).
   "email not confirmed" error → /verify-email. Sign In disabled until Terms checkbox (placeholder legal text, `shortcut:`).
   `logEvent("SIGN_IN")` after password (no factor) or after OTP success.
-- Admin MFA is mandatory: AuthGuard sends a factor-less admin to `/admin/settings`; Settings shows the banner, hides Remove for admins,
+- Admin and department-head MFA is mandatory: AuthGuard sends a factor-less one to `/admin/settings` or `/head/settings`; Settings shows the banner, hides Remove for both,
   calls `retryProfile` after enrol. Server side `mfa_satisfied()` enforces it too. Lost authenticator = locked out until a maintainer
   runs `delete from auth.mfa_factors where user_id=...`.
-- Department heads may enrol/remove TOTP optionally.
 - ResetPassword: `verifyOtp({token_hash, type})` once → if account has a factor, ask TOTP → `updateUser({password})` (min 8) → signOut → /login.
 - VerifyEmail: `auth.resend({type:'signup'})` with 30 s cooldown; "I've verified" re-reads user.
 - AccountStatus: pending → "Waiting for activation"; officer/owner → "Use the Inspectra app"; auto-navigates to `/` when role becomes admin/department_head.
@@ -145,7 +144,7 @@ Role change = `profiles.update({role})`. `ASSIGNABLE = pending|officer|departmen
 FIELD_LABEL map and HIDDEN regex. Excel export cap 5000 → `logEvent("EXPORT")`. Resolves ids via establishments + profiles.
 
 **Settings** — Account (email, role), ExportSettings (admin: Category column toggle), SecuritySettings: TOTP enrol
-(`mfa.enroll({factorType:'totp', issuer:'Inspectra'})`, QR via `QRCode.toDataURL` data: URL, manual secret, verify, `retryProfile`); Remove only for non-admins.
+(`mfa.enroll({factorType:'totp', issuer:'Inspectra'})`, QR via `QRCode.toDataURL` data: URL, manual secret, verify, `retryProfile`); Remove hidden for admins and department heads.
 
 ## Rating scale (`src/lib/ratingScale.ts`, contract shared with mobile)
 

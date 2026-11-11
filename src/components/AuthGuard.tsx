@@ -57,10 +57,12 @@ export function AuthGuard({ allowedRoles }: AuthGuardProps) {
         </div>
       );
     }
-    // Administrators must enrol a second factor (11_admin_mfa_required.sql
-    // refuses every other read until they do). Settings holds the enrolment.
-    if (role === 'admin' && !mfaEnrolled && location.pathname !== '/admin/settings') {
-      return <Navigate to="/admin/settings" replace />;
+    // Administrators and department heads must enrol a second factor
+    // (11_admin_mfa_required.sql + 13_head_mfa_required.sql refuse every
+    // other read until they do). Settings holds the enrolment.
+    const settingsPath = role === 'admin' ? '/admin/settings' : '/head/settings';
+    if ((role === 'admin' || role === 'department_head') && !mfaEnrolled && location.pathname !== settingsPath) {
+      return <Navigate to={settingsPath} replace />;
     }
     if (!allowedRoles.includes(role)) {
       // Back to the index, which is the one place that knows where each role

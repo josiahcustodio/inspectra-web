@@ -20,7 +20,7 @@ are never used for roles. The JWT is only read for `aal` by `mfa_satisfied()`.
 | `pending` | every new auth user (trigger `handle_new_user`) | nothing except read own profile row |
 | `officer` | field inspector (mobile) | read all staff data, insert/update establishments, permits, inspection_logs, upload evidence |
 | `admin` | CHO office admin (web) | everything, plus profiles, reference data, imports, audit_log, deletes. **Must have TOTP enrolled and be at AAL2.** |
-| `department_head` | read-only web viewer | read what staff read, write nothing; cannot read `upload_batches`, `review_queue`, `audit_log` |
+| `department_head` | read-only web viewer | read what staff read, write nothing; cannot read `upload_batches`, `review_queue`, `audit_log`. **Must have TOTP enrolled and be at AAL2 (SQL 13).** |
 | `owner` | establishment point person (mobile, OTP sign-in) | SELECT only on their establishments (via `establishment_contacts`) and those establishments' inspection_logs |
 
 Helper functions (all `security definer`, `search_path = public`):

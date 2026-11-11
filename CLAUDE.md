@@ -25,7 +25,7 @@ identifier over reading whole pages (several pages are 400–700 lines). Everyth
   `https://www.inspectra-cho.com`), Flutter inspector app (`inspectra-mobile`, Android APK side-loaded with GitHub-release self-update),
   and Supabase project `fwtgdgeiffnvqyrobixc` (Postgres + Auth + RLS + 3 Deno Edge Functions). No custom API server; both clients use
   supabase-js / supabase_flutter with the publishable key. **Authorization is Postgres RLS**, client role checks are UI only.
-- **Roles** (`profiles.role`, enum `app_role`): `admin` (web, full, TOTP mandatory), `department_head` (web, read-only),
+- **Roles** (`profiles.role`, enum `app_role`): `admin` (web, full, TOTP mandatory), `department_head` (web, read-only, TOTP mandatory),
   `officer` (mobile inspector, writes inspections), `owner` (mobile, read own establishments; granted automatically from the point-person
   email an inspector records), `pending` (every new account; grants nothing until an admin promotes it in the web Access page).
 - **Core tables:** `establishments` (≈5k, from yearly BPLO masterlist import + manual add), `inspection_logs` (one per inspection, `results` jsonb,

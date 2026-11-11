@@ -28,7 +28,7 @@ UI column = where you see it: sidebar entry (admin at `/admin/*`, department hea
 | `WEB_ROUTE_MAP` | `routes.tsx` 64–145 | route table; `/admin/*` and `/head/*` wrapped in `AuthGuard` + `Layout` | all URLs |
 | `ROLE_REDIRECT` | `routes.tsx` 19–62 | `/` sends each role to its home (admin/head dashboard, others `/account`) | landing on `/` |
 | `ROLE_REDIRECT_NON_STAFF` | `routes.tsx` 36–43 | pending / owner / officer → `/account`, never into the shell | — |
-| `WEB_AUTH_GUARD` | `components/AuthGuard.tsx` 10–75 | session → MFA → email → role gate; admin without TOTP forced to Settings | every shell page |
+| `WEB_AUTH_GUARD` | `components/AuthGuard.tsx` 10–75 | session → MFA → email → role gate; admin/department head without TOTP forced to Settings | every shell page |
 | `ADMIN_SHELL` | `components/Layout.tsx` 48–203 | sidebar (drawer < lg), header, account menu, sign out, content scroller | the frame around every page |
 | `ROLE_NAV` | `components/Layout.tsx` 61–69 | `/admin` vs `/head` prefix; `adminOnly` items hidden for department head | sidebar items (Access, Audit Trail admin-only) |
 | `OFFLINE_BANNER` | `components/Layout.tsx` 181–192 | amber "You are offline" strip | top of page content when offline |

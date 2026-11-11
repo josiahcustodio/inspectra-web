@@ -33,7 +33,7 @@ import { exportIncludesCategory, setExportIncludesCategory } from "@/lib/exportP
 // itself the proof, and verifying it also upgrades this session to AAL2.
 function SecuritySettings() {
   const { user, role, mfaEnrolled, retryProfile } = useAuth();
-  const mfaRequired = role === 'admin';
+  const mfaRequired = role === 'admin' || role === 'department_head';
 
   // The enrolled-factor state lives server-side; listFactors() is the truth.
   // Reloaded after every enrol/unenroll via the counter.
@@ -136,7 +136,7 @@ function SecuritySettings() {
 
       {mfaRequired && !mfaEnrolled && (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Two-factor authentication is required for administrator accounts. Set it up
+          Two-factor authentication is required for your account. Set it up
           below to continue using the portal.
         </p>
       )}
@@ -148,7 +148,7 @@ function SecuritySettings() {
             <p className="text-sm text-slate-500">{enrolledTotp.friendly_name ?? "TOTP factor"}</p>
           </div>
           {mfaRequired ? (
-            <p className="text-sm text-slate-500">Required for administrators</p>
+            <p className="text-sm text-slate-500">Required for your account</p>
           ) : (
             <Button variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={handleUnenroll}>
               <Trash2 className="w-4 h-4" />

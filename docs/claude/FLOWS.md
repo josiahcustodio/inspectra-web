@@ -7,7 +7,7 @@ Cross-cutting behaviour that spans mobile + database + web. File-level detail is
 | Actor | Client | Role | Gets in by |
 |---|---|---|---|
 | CHO admin | web `/admin/*` | `admin` | invited/promoted by maintainer (`promote_admin.py`) or Access page; TOTP mandatory |
-| Department head | web `/head/*` | `department_head` | promoted in Access page; read-only; TOTP optional |
+| Department head | web `/head/*` | `department_head` | promoted in Access page; read-only; TOTP mandatory (SQL 13) |
 | Field inspector | mobile | `officer` | self sign-up in app → email confirm → `pending` → admin sets `officer` in Access → TOTP enrol mandatory |
 | Establishment owner / point person | mobile owner mode | `owner` | inspector records their email on an inspection → trigger grants → they sign in with email OTP (no password) |
 | New account | either | `pending` | web shows AccountStatus "Waiting for activation"; mobile shows /pending-approval |
@@ -57,8 +57,8 @@ Web `answerKind()` maps pass/compliant → pass, fail/non-compliant → fail, el
 ## 5. Authentication details
 
 - Roles come from `profiles.role` on every client; never from JWT claims.
-- MFA (TOTP via Supabase `mfa.*`): mandatory for mobile staff roles and web admins; optional for department_head; owners never.
-  `mfa_satisfied()` RLS gate: AAL2 passes; enrolled-but-AAL1 fails; unenrolled non-admin passes; unenrolled admin fails (except reading own profile row).
+- MFA (TOTP via Supabase `mfa.*`): mandatory for mobile staff roles, web admins and department heads; owners never.
+  `mfa_satisfied()` RLS gate: AAL2 passes; enrolled-but-AAL1 fails; unenrolled officer/owner passes; unenrolled admin or department_head fails (except reading own profile row).
 - Sign-in loop bug (fixed in b5): gotrue `listFactors()` triggers `tokenRefreshed`, which re-entered the mobile auth listener → 429 → sign-out. Mobile now ignores `tokenRefreshed`.
 - Password reset: requested from mobile "Forgot Password?" → Reset-password template → web `/reset-password?token_hash&type=recovery` → `verifyOtp` → TOTP if enrolled → `updateUser`. Web has no forgot-password link itself.
 - Invites: Invite template → `/reset-password?type=invite`.

@@ -23,8 +23,8 @@ interface AuthState {
    *  RLS blocks every table read in that state, so the guards park the
    *  user on /login where the OTP pane completes the sign-in. */
   needsMfa: boolean;
-  /** True once a verified TOTP factor exists. Administrators must have one
-   *  (11_admin_mfa_required.sql); AuthGuard sends them to enrol otherwise. */
+  /** True once a verified TOTP factor exists. Administrators and department
+   *  heads must have one (11_admin_mfa_required.sql, 13_head_mfa_required.sql); AuthGuard sends them to enrol otherwise. */
   mfaEnrolled: boolean;
   isLoading: boolean;
   error: Error | null;
