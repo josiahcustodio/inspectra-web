@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { buildComplianceReportPdf, complianceReportFileName } from "@/lib/complianceReportPdf";
+import { buildComplianceReportPdf, complianceReportFileName, type ComplianceReport } from "@/lib/complianceReportPdf";
 import { logEvent } from "@/lib/auditEvents";
 import { buildScopePreview, manilaDate, MAX_RANGE_DAYS, rangeInstants } from "@/lib/complianceReportScope";
 import type { Establishment, InspectionLog } from "@/lib/models";
@@ -20,9 +20,10 @@ import { supabase } from "@/lib/supabase";
 // [REF: AI_BARANGAY_SUMMARY] — client half.
 //
 // Pick a date range and barangays, see what that covers, then confirm. Only the
-// confirm calls the generate-barangay-summary Edge Function (a paid API call);
-// the PDF is built from its response (src/lib/complianceReportPdf.ts) and offered
-// for download next to the five-sentence summary.
+// confirm calls the generate-barangay-summary Edge Function (a paid API call).
+// Its five-sentence summary is shown first as a preview; the PDF is built from
+// the same response (src/lib/complianceReportPdf.ts) only when the user asks
+// for the full report, so that step costs nothing.
 //
 // Edge Functions are served from the Supabase origin the CSP already allows,
 // so this adds no new origin (see docs/SECURITY_HEADERS.md).
@@ -33,7 +34,6 @@ const DEFAULT_RANGE_DAYS = 90;
 const MAX_LISTED_ROWS = 300;
 
 interface ReadyReport {
-  summary: string;
   url: string;
   fileName: string;
   size: number;
@@ -49,7 +49,10 @@ interface Props {
 export function BarangaySummaryDialog({ establishments, logs }: Props) {
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // The function's response; previewed as a summary before any PDF exists.
+  const [draft, setDraft] = useState<ComplianceReport | null>(null);
   const [report, setReport] = useState<ReadyReport | null>(null);
+  const [isBuilding, setIsBuilding] = useState(false);
   const [editing, setEditing] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fromDay, setFromDay] = useState(() => manilaDate(new Date(Date.now() - DEFAULT_RANGE_DAYS * 24 * 60 * 60 * 1000)));
@@ -91,25 +94,33 @@ export function BarangaySummaryDialog({ establishments, logs }: Props) {
       }
       setError(message);
     } else {
-      try {
-        const { blob, pages } = await buildComplianceReportPdf(data);
-        // Previous PDF is superseded; a tab already showing it keeps its copy.
-        if (report) URL.revokeObjectURL(report.url);
-        setReport({
-          summary: data.narrative.executive_summary,
-          url: URL.createObjectURL(blob),
-          fileName: complianceReportFileName(data),
-          size: blob.size,
-          pages,
-        });
-        setEditing(false);
-        logEvent("REPORT", `Barangay compliance report ${fromDay} to ${toDay}` +
-          (selected.length < preview.barangays.length ? `, ${selected.length} barangays` : ""));
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not build the PDF.");
-      }
+      // Previous PDF is superseded; a tab already showing it keeps its copy.
+      if (report) URL.revokeObjectURL(report.url);
+      setReport(null);
+      setDraft(data);
+      setEditing(false);
+      logEvent("REPORT", `Barangay compliance report ${fromDay} to ${toDay}` +
+        (selected.length < preview.barangays.length ? `, ${selected.length} barangays` : ""));
     }
     setIsLoading(false);
+  };
+
+  const buildPdf = async () => {
+    if (!draft) return;
+    setIsBuilding(true);
+    setError(null);
+    try {
+      const { blob, pages } = await buildComplianceReportPdf(draft);
+      setReport({
+        url: URL.createObjectURL(blob),
+        fileName: complianceReportFileName(draft),
+        size: blob.size,
+        pages,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not build the PDF.");
+    }
+    setIsBuilding(false);
   };
 
   const canConfirm = !!preview && preview.inspections > 0 && !isLoading;
@@ -131,7 +142,9 @@ export function BarangaySummaryDialog({ establishments, logs }: Props) {
             <DialogDescription>
               {editing
                 ? "Choose what the report covers. Nothing is generated until you confirm."
-                : "AI-drafted from the inspections you selected. Review before sharing — this is not an official record."}
+                : report
+                  ? "AI-drafted from the inspections you selected. Review before sharing — this is not an official record."
+                  : "Preview of the AI-drafted summary. Create the full report when it looks right, or change the filters."}
             </DialogDescription>
           </DialogHeader>
 
@@ -271,10 +284,10 @@ export function BarangaySummaryDialog({ establishments, logs }: Props) {
             </div>
           )}
 
-          {!isLoading && !editing && report && (
+          {!isLoading && !editing && draft && (
             <div className="flex-1 min-h-0 overflow-y-auto">
               <div className="mx-auto flex max-w-2xl flex-col gap-4">
-                <div className="flex items-center gap-3 rounded-lg border bg-slate-50 p-3">
+                {report && <div className="flex items-center gap-3 rounded-lg border bg-slate-50 p-3">
                   <FileText className="w-8 h-8 flex-shrink-0 text-emerald-700" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-slate-900">{report.fileName}</p>
@@ -288,11 +301,11 @@ export function BarangaySummaryDialog({ establishments, logs }: Props) {
                       Download
                     </a>
                   </Button>
-                </div>
+                </div>}
 
                 <div>
-                  <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-600">Summary</h3>
-                  <p className="text-sm leading-relaxed text-slate-700">{report.summary}</p>
+                  <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-600">{report ? "Summary" : "Summary preview"}</h3>
+                  <p className="text-sm leading-relaxed text-slate-700">{draft.narrative.executive_summary}</p>
                 </div>
               </div>
             </div>
@@ -301,7 +314,7 @@ export function BarangaySummaryDialog({ establishments, logs }: Props) {
           {!isLoading && editing && (
             <div className="flex-shrink-0 flex flex-wrap items-center justify-end gap-3">
               {error && <p role="alert" className="mr-auto text-sm font-bold text-red-600">{error}</p>}
-              {report && (
+              {draft && (
                 <Button variant="outline" onClick={() => { setError(null); setEditing(false); }} className="font-bold">
                   Back to Report
                 </Button>
@@ -313,18 +326,26 @@ export function BarangaySummaryDialog({ establishments, logs }: Props) {
             </div>
           )}
 
-          {!isLoading && !editing && report && (
-            <div className="flex-shrink-0 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setEditing(true)} className="font-bold gap-2">
+          {!isLoading && !editing && draft && (
+            <div className="flex-shrink-0 flex flex-wrap items-center justify-end gap-2">
+              {error && <p role="alert" className="mr-auto text-sm font-bold text-red-600">{error}</p>}
+              <Button variant="outline" onClick={() => { setError(null); setEditing(true); }} className="font-bold gap-2">
                 <SlidersHorizontal className="w-4 h-4" />
                 Change Filters
               </Button>
-              <Button asChild className="font-bold gap-2">
-                <a href={report.url} target="_blank" rel="noopener">
-                  <ExternalLink className="w-4 h-4" />
-                  View Full Report
-                </a>
-              </Button>
+              {report ? (
+                <Button asChild className="font-bold gap-2">
+                  <a href={report.url} target="_blank" rel="noopener">
+                    <ExternalLink className="w-4 h-4" />
+                    View Full Report
+                  </a>
+                </Button>
+              ) : (
+                <Button onClick={buildPdf} disabled={isBuilding} className="font-bold gap-2">
+                  <FileText className="w-4 h-4" />
+                  {isBuilding ? "Creating…" : "Create Full Report"}
+                </Button>
+              )}
             </div>
           )}
         </DialogContent>

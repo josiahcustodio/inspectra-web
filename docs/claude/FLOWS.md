@@ -75,8 +75,8 @@ inspection data; it revives delisted records it sees. Details in WEB.md → Mast
 ## 7. AI compliance report (web, both roles)
 
 Dashboard button → BarangaySummaryDialog: date range (default last 90 Manila days, max 366) + barangay checkboxes → local preview →
-Confirm → edge function `generate-barangay-summary` (Anthropic `claude-opus-5-5`, JSON schema) → client jsPDF A4 executive report
-(`Inspectra_Compliance_Report_{from}_to_{to}.pdf`) → `logEvent("REPORT")`. Function has no role check; RLS scopes data. Real generation untested as of 2026-11-06.
+Confirm → edge function `generate-barangay-summary` (Anthropic `claude-opus-5-5`, JSON schema) → `logEvent("REPORT")` → summary preview → "Create Full Report" → client jsPDF A4 executive report
+(`Inspectra_Compliance_Report_{from}_to_{to}.pdf`). Function has no role check; RLS scopes data. Real generation untested as of 2026-11-06.
 
 ## 8. Audit trail
 
