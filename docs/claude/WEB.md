@@ -3,7 +3,7 @@
 React 18.3 + react-router 7 + Vite 6 + Tailwind v4 (`@tailwindcss/vite`, no tailwind.config) + supabase-js 2.
 Other libs: recharts (charts), leaflet (map), exceljs (xlsx write), `xlsx` 0.20.3 from SheetJS CDN tarball (xlsx read),
 jspdf + jspdf-autotable (PDF), qrcode (MFA QR), sonner (toasts), Radix/shadcn primitives, input-otp.
-Folder is literally named `File processing task` and `package.json` name is `@figma/my-make-file` (Figma export leftover).
+Folder is literally named `File processing task` (Figma export leftover); `package.json` name is `inspectra-web`.
 
 Scripts: `npm run dev` (http://localhost:5173), `npm run build` (vite, **no typecheck**; run `npx tsc --noEmit` yourself).
 No test/lint scripts. Env (public, baked into bundle): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` in untracked `.env`.
@@ -28,10 +28,10 @@ src/components/
   BarangaySummaryDialog.tsx  AI executive report: scope (dates, barangays) → preview → generate-barangay-summary → jsPDF → logEvent REPORT
   ui/                   shadcn: button card dialog dropdown-menu input-otp input label pagination select sonner utils(cn)
 src/pages/              Login VerifyEmail ResetPassword AccountStatus Dashboard Establishments Inspections GISMap
-                        Inspectors Masterlist MasterlistImport(dialog, not route) Access Audit Settings
+                        Inspectors Masterlist Access Audit Settings (MasterlistImport dialog lives in components/)
 src/lib/
   supabase.ts           createClient; fetchAllRows(table) paged 1000, first page gives count, rest parallel
-  firestore.ts          NOT dead — Supabase data-access under old name: COLLECTIONS, PERMITS_TABLE, map* snake→camel mappers,
+  dataAccess.ts         Supabase data access (was firestore.ts until 2026-11-08): COLLECTIONS, PERMITS_TABLE, map* snake→camel mappers,
                         saveEstablishment(id|null, payload) upsert, fetchInspectionDetails(logId). Dead: saveInspector, deleteInspector
   useAuth.tsx           AuthProvider/useAuth: user, session, role (profiles.role; missing → 'pending'), emailVerified, needsMfa, mfaEnrolled, retryProfile
   useCollection.ts      useCollection(table, map): fetchAllRows + realtime postgres_changes refetch (300 ms debounce), module cache per user:table

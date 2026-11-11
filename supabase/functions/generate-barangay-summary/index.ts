@@ -216,17 +216,18 @@ async function handle(req: Request): Promise<Response> {
 
   const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY from env
   const response = await anthropic.beta.messages.create({
-    // Opus 5 for report prose; swap to "claude-haiku-4-5" if cost ever matters
-    // more than writing quality (also drop betas/fallbacks then — Haiku has no
-    // safety-classifier refusals to fall back from).
-    model: "claude-opus-5",
+    // Opus 5.5 for report prose; swap to "claude-sonnet-5-5" if cost ever matters
+    // more than writing quality (keeps fallbacks). Haiku would need betas/fallbacks
+    // dropped — it has no server-side fallback.
+    model: "claude-opus-5-5",
     max_tokens: 16000,
     // Server-side fallback: if a safety classifier ever declines (it shouldn't
     // for sanitation data, but the failure mode is a blank report), the API
     // retries on the recommended fallback model inside the same call.
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    output_config: { format: { type: "json_schema", schema: NARRATIVE_SCHEMA } },
+    // Opus 5.5 defaults to "medium"; grounding an official report earns "high".
+    output_config: { effort: "high", format: { type: "json_schema", schema: NARRATIVE_SCHEMA } },
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: buildPrompt(city, detailed, rest, from.toISOString(), to.toISOString(), scope) }],
   });

@@ -14,7 +14,7 @@ import {
   mapInspectionLog,
   mapInspector,
   mapProfile,
-} from "@/lib/firestore";
+} from "@/lib/dataAccess";
 import type { InspectionLog } from "@/lib/models";
 import { barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { byNewestFirst, isoDatePart, isoTimePart } from "@/lib/inspectionDates";

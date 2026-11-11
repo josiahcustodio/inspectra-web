@@ -15,7 +15,7 @@ import {
   COLLECTIONS,
   fetchInspectionDetails,
   mapInspectionLog,
-} from "@/lib/firestore";
+} from "@/lib/dataAccess";
 import type { Establishment, InspectionLog } from "@/lib/models";
 import { UNSCORED_LOG_LABEL, ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { barangayOfEstablishment } from "@/lib/barangayGeo";

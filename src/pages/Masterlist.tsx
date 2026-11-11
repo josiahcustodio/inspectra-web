@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, Upload } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { MasterlistImport } from "@/pages/MasterlistImport";
+import { MasterlistImport } from "@/components/MasterlistImport";
 import { toast } from "sonner";
 import { useCollection } from "@/lib/useCollection";
 import {
@@ -32,7 +32,7 @@ import {
   mapEstablishment,
   mapInspectionLog,
   saveEstablishment,
-} from "@/lib/firestore";
+} from "@/lib/dataAccess";
 import type { Establishment, InspectionLog } from "@/lib/models";
 import { formatShortDate, isoDatePart, latestLogByEstablishment as latestLogByEstablishment_ } from "@/lib/inspectionDates";
 import { toYmd } from "@/lib/import/normalize";

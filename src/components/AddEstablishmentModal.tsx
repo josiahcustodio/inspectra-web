@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { COLLECTIONS, mapCategory, saveEstablishment } from "@/lib/firestore";
+import { COLLECTIONS, mapCategory, saveEstablishment } from "@/lib/dataAccess";
 import { useCollection } from "@/lib/useCollection";
 import type { Category, Establishment } from "@/lib/models";
 import psgcData from "@/lib/data/batangas_psgc.json";

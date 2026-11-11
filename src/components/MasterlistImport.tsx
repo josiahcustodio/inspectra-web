@@ -26,7 +26,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileSpreadsheet, Upload } from "lucide-react";
 import { fetchAllRows } from "@/lib/supabase";
-import { COLLECTIONS, mapEstablishment, mapReviewQueueItem } from "@/lib/firestore";
+import { COLLECTIONS, mapEstablishment, mapReviewQueueItem } from "@/lib/dataAccess";
 import { useCollection } from "@/lib/useCollection";
 import { useAuth } from "@/lib/useAuth";
 import type { Establishment, ReviewQueueItem } from "@/lib/models";

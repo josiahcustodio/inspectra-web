@@ -21,7 +21,7 @@ import { useAuth } from "@/lib/useAuth";
 // dependency would have had to be added twice — here and in the mobile app —
 // to produce a document the office is going to print anyway.
 //
-// Read-only on purpose. `firestore.ts` has no saveInspectionLog: logs are
+// Read-only on purpose. `dataAccess.ts` has no saveInspectionLog: logs are
 // written by the mobile client at inspection time, and that includes the
 // order. Correcting one happens on the phone, not at the desk.
 

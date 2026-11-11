@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { MapPin, Layers, Search, AlertTriangle, ChevronLeft, Crosshair } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useCollection } from "@/lib/useCollection";
-import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/firestore";
+import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/dataAccess";
 import {
   BARANGAY_BOUNDARIES,
   BARANGAY_NAMES,

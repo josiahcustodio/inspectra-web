@@ -245,7 +245,7 @@ Renders HTML via `render.ts`, sends through Brevo HTTP API `POST https://api.bre
 ### generate-barangay-summary — LIVE, used by web `BarangaySummaryDialog.tsx`
 Body `{from?, to?, barangays?[]}` (default 90-day window, max 366 days). **No role check**; RLS under the caller's JWT limits data.
 Pages `inspection_logs` by `inspection_date` (1000/page) + all `establishments`, aggregates in `aggregate.ts` (422 if empty),
-one Anthropic call (`claude-opus-5`, JSON-schema output, `max_tokens 16000`, server-side fallback beta) → 
+one Anthropic call (`claude-opus-5-5`, JSON-schema output, `max_tokens 16000`, server-side fallback beta) → 
 `{narrative, from, to, city, barangays, scope_barangays}`. Writes nothing. Secret: `ANTHROPIC_API_KEY`.
 Web turns the result into a jsPDF executive report. Real (non-stubbed) generation untested as of 2026-11-06.
 
@@ -260,7 +260,7 @@ Replaced by the auto-owner triggers (SQL 10). Admin-only; created an owner auth 
 - Never run `apply_phase1.py` against the live project: its first step is `00_wipe.sql` (drops tables, deletes auth.users).
   Also `01/02_*.sql` are stale (missing SQL 10–12), so a rebuild from them would lose admin-MFA, auto-owner and `log_event`.
 - Firebase (the previous backend, project `inspectra-firebase`) is FROZEN since 2026-10-11 with deny-all rules; delete planned ~2026-11-10.
-  Any `firestore.rules`, `firebase_options.dart`, `src/lib/firestore.ts` leftovers are dead.
+  Any `firestore.rules` / `firebase_options.dart` leftovers are dead (web `src/lib/dataAccess.ts`, ex-`firestore.ts`, is live Supabase code).
 - Live data 2026-11-05: ~4967 real establishments + 109 OSM_SEED demo rows. Demo rows: `masterlist_sheet='OSM_SEED'`;
   48 real rows also carry coordinates merged from OSM (street/mall level, not exact).
 - RLS probe suites (`migration/rls_probes.py` 27 checks anon/officer/admin + storage; `rls_probes_audit.py` 19 checks

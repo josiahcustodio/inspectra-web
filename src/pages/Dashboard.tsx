@@ -16,7 +16,7 @@ import {
 import { BarangaySummaryDialog } from "@/components/BarangaySummaryDialog";
 import { BARANGAY_NAMES, barangayOfEstablishment, canonicalBarangay } from "@/lib/barangayGeo";
 import { useCollection } from "@/lib/useCollection";
-import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/firestore";
+import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/dataAccess";
 import {
   PASSING_SCORE,
   RATING_BANDS,

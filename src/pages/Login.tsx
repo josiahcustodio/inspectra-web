@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ShieldCheck, ShieldQuestion } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { challengeAndVerifyTotp } from "@/lib/totp";
@@ -45,6 +45,9 @@ export function Login() {
   const [mfaCode, setMfaCode] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [legal, setLegal] = useState<keyof typeof LEGAL | null>(null);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
   const legalLink = (key: keyof typeof LEGAL, label: string, className: string) => (
     <button type="button" onClick={() => setLegal(key)} className={className}>{label}</button>
   );
@@ -67,6 +70,9 @@ export function Login() {
 
     setIsLoading(true);
     try {
+      // shortcut: a 1 s client-side hold per attempt slows a browser-driven
+      // guesser; a direct API caller is gated by Supabase's own rate limits.
+      await new Promise((r) => setTimeout(r, 1000));
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       // If this account has a TOTP factor, useAuth flips needsMfa and this
@@ -82,7 +88,39 @@ export function Login() {
         navigate("/verify-email", { replace: true, state: { email } });
       } else {
         toast.error(err.message || "Failed to log in");
+        // Third wrong password in a row: offer a reset instead of a fourth guess.
+        const failures = failedAttempts + 1;
+        setFailedAttempts(failures);
+        if (failures >= 3) openForgot();
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openForgot = () => {
+    setForgotEmail(email);
+    setForgotOpen(true);
+  };
+
+  // [REF: WEB_FORGOT_PASSWORD]
+  // The recovery email links to /reset-password (see ResetPassword.tsx).
+  // Supabase answers the same for unknown addresses, so nothing here reveals
+  // whether an account exists.
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail) return;
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast.success("If that email has an account, a reset link is on its way.");
+      setForgotOpen(false);
+      setFailedAttempts(0);
+    } catch (err: any) {
+      toast.error(err.message || "Couldn't send the reset email");
     } finally {
       setIsLoading(false);
     }
@@ -232,6 +270,9 @@ export function Login() {
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <Label htmlFor="password">Password</Label>
+                  <button type="button" onClick={openForgot} className="text-sm text-primary font-medium hover:underline">
+                    Forgot password?
+                  </button>
                 </div>
                 <Input
                   id="password"
@@ -276,6 +317,40 @@ export function Login() {
           )}
         </div>
       </div>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-slate-900 font-bold">Reset your password</DialogTitle>
+            <DialogDescription>
+              {failedAttempts >= 3
+                ? "That password was wrong 3 times. We can email you a link to set a new one."
+                : "Enter your account email and we'll send you a link to set a new password."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleForgotSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-email">Email</Label>
+              <Input
+                id="forgot-email"
+                type="email"
+                placeholder="name@example.com"
+                className="h-12 bg-white border-slate-200 focus-visible:ring-primary/20"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            <Button type="submit" className="w-full h-12 text-base font-medium" disabled={isLoading || !forgotEmail}>
+              {isLoading ? (
+                <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />
+              ) : null}
+              Send reset link
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={legal !== null} onOpenChange={(open) => { if (!open) setLegal(null); }}>
         <DialogContent className="sm:max-w-lg">

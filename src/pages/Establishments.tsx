@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Building2, Edit2 } from "lucide-react";
 import { useCollection } from "@/lib/useCollection";
-import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/firestore";
+import { COLLECTIONS, mapEstablishment, mapInspectionLog } from "@/lib/dataAccess";
 import type { Establishment } from "@/lib/models";
 import { useMemo, useState } from "react";
 import { AddEstablishmentModal } from "@/components/AddEstablishmentModal";

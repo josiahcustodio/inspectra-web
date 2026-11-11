@@ -30,7 +30,7 @@ src/
     Inspectors.tsx      The inspector directory, merged from three sources.
     GISMap.tsx          Leaflet map of barangay-level compliance.
     Masterlist.tsx      Admin-only: the Excel-shaped full-column masterlist grid.
-    MasterlistImport.tsx  Admin-only: Excel masterlist upload, preview, and import.
+    (MasterlistImport.tsx moved to components/ — it is a dialog, not a route.)
     Settings.tsx        Account summary and TOTP enrolment.
 
   components/           Shared UI that is specific to this app.
@@ -47,9 +47,8 @@ src/
     supabase.ts         Initialises the client, plus fetchAllRows() — the paged reader
                         every whole-table load goes through (PostgREST caps one response
                         at 1000 rows; a bare select would silently truncate).
-    firestore.ts        Table names, row->model mappers, and the write helpers. Keeps its
-                        historical filename so forty-odd import sites didn't churn in the
-                        migration commit; the header explains.
+    dataAccess.ts        Table names, row->model mappers, and the write helpers
+                        (was firestore.ts until 2026-11-08).
     models.ts           The domain types. The schema contract with the mobile app.
     useCollection.ts    Reads a whole table and re-reads on every change (Supabase
                         Realtime); distinguishes loading from empty.
@@ -97,7 +96,7 @@ the map aggregates by barangay, `Settings.tsx` on the forced re-render. Those ar
 load-bearing; do not tidy them away.
 
 **`[REF: ...]` anchors** mark the passage that owns a behaviour, and are the
-index the Word documentation in `docs/` points at. An anchor may appear in more
+index `docs/claude/ANCHORS.md` and the Word documentation in `docs/` point at. An anchor may appear in more
 than one file when a convention is shared. Renaming one means updating the docs,
 so prefer adding a new anchor to renaming an old one. Current index below.
 
@@ -128,66 +127,5 @@ build fine and fail at runtime.
 
 ## [REF:] index
 
-| Anchor | Owned by |
-|---|---|
-| `ADMIN_SHELL` | components/Layout.tsx |
-| `BARANGAY_ALIASES` | lib/barangayGeo.ts |
-| `BARANGAY_GEO` | lib/barangayGeo.ts |
-| `BAR_GRAPH` | pages/Dashboard.tsx |
-| `CARD_SURFACE_STYLE` | pages/Dashboard.tsx |
-| `CLOUD_DATA_ACCESS` | lib/firestore.ts |
-| `CONNECTION_STATUS` | lib/ConnectionProvider.tsx |
-| `DOMAIN_MODELS` | lib/models.ts |
-| `EMAIL_VERIFICATION_CHECK` | pages/VerifyEmail.tsx |
-| `ESTABLISHMENT_FORM_SAVE` | components/AddEstablishmentModal.tsx |
-| `ESTABLISHMENT_HISTORY_MODAL` | components/EstablishmentHistoryModal.tsx, pages/Establishments.tsx |
-| `ESTABLISHMENT_HISTORY_SUMMARY` | components/EstablishmentHistoryModal.tsx |
-| `ESTABLISHMENT_LIST` | pages/Establishments.tsx |
-| `ESTABLISHMENT_WRITE` | lib/firestore.ts |
-| `GIS_BARANGAY_AGGREGATION` | pages/GISMap.tsx |
-| `GIS_BARANGAY_MODEL` | pages/GISMap.tsx |
-| `GIS_EMPTY_STATE` | pages/GISMap.tsx |
-| `GIS_MAP` | pages/GISMap.tsx |
-| `GIS_UNMAPPED` | pages/GISMap.tsx |
-| `INSPECTION_CHECKLIST_VIEW` | components/InspectionChecklistView.tsx |
-| `INSPECTION_DATE_CONVENTION` | components/EstablishmentHistoryModal.tsx, components/InspectionChecklistView.tsx, lib/inspectionDates.ts, pages/GISMap.tsx, pages/Inspections.tsx |
-| `INSPECTION_DETAILS_FETCH_WEB` | lib/firestore.ts |
-| `INSPECTION_DETAILS_VIEW_WEB` | pages/Inspections.tsx |
-| `INSPECTION_LIST` | pages/Inspections.tsx |
-| `INSPECTION_PAGINATION` | pages/Inspections.tsx |
-| `INSPECTOR_DIRECTORY` | pages/Inspectors.tsx |
-| `INSPECTOR_WRITE` | lib/firestore.ts |
-| `KPI_STATS` | pages/Dashboard.tsx |
-| `LIVE_COLLECTION` | lib/useCollection.ts |
-| `ESTABLISHMENT_DELIST` | pages/Masterlist.tsx |
-| `MASTERLIST_EXPORT` | lib/masterlistExport.ts |
-| `MASTERLIST_EXPORT_PREFS` | lib/exportPrefs.ts, pages/Settings.tsx |
-| `MASTERLIST_GRID` | pages/Masterlist.tsx |
-| `MASTERLIST_HEADER_DETECT` | lib/import/parseWorkbook.ts |
-| `MASTERLIST_IMPORT_PAGE` | pages/MasterlistImport.tsx |
-| `MASTERLIST_IMPORT_WRITES` | lib/import/runImport.ts |
-| `MASTERLIST_MATCH_CASCADE` | lib/import/matchRows.ts |
-| `MASTERLIST_NORMALIZE` | lib/import/normalize.ts |
-| `MASTERLIST_PARSE` | lib/import/parseWorkbook.ts |
-| `MASTERLIST_REVIEW_QUEUE` | pages/MasterlistImport.tsx |
-| `MFA_TOTP_ENROLL` | pages/Settings.tsx |
-| `OFFLINE_BANNER` | components/Layout.tsx |
-| `OFFLINE_TEARDOWN` | lib/legacyOfflineCleanup.ts |
-| `PAGE_NUMBER_STRIP` | components/PageStrip.tsx, lib/pagination.ts |
-| `PIE_GRAPH` | pages/Dashboard.tsx |
-| `RATING_SCALE` | components/EstablishmentHistoryModal.tsx, lib/ratingScale.ts, pages/Dashboard.tsx, pages/GISMap.tsx, pages/Inspections.tsx |
-| `ROLE_NAV` | components/Layout.tsx |
-| `ROLE_REDIRECT` | routes.tsx |
-| `TOTP_CHALLENGE_VERIFY` | lib/totp.ts |
-| `WEB_APP_BOOTSTRAP` | main.tsx |
-| `WEB_AUTH_GUARD` | components/AuthGuard.tsx |
-| `WEB_AUTH_STATE` | lib/useAuth.tsx |
-| `WEB_DESIGN_TOKENS` | styles/theme.css |
-| `WEB_SUPABASE_INIT` | lib/supabase.ts |
-| `WEB_MFA_CHALLENGE` | pages/Login.tsx |
-| `WEB_PROFILE_BOOTSTRAP` | lib/useAuth.tsx |
-| `WEB_ROUTE_MAP` | routes.tsx |
-| `WEB_SIGNIN_EMAIL` | pages/Login.tsx |
-| `WEB_SIGNUP` | pages/Signup.tsx |
-| `WEB_STYLE_ENTRY` | styles/index.css |
+Moved to `docs/claude/ANCHORS.md` (web + mobile, with line ranges and UI locations). The table that used to live here went stale.
 

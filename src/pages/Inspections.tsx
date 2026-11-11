@@ -15,7 +15,7 @@ import {
   fetchInspectionDetails,
   mapEstablishment,
   mapInspectionLog,
-} from "@/lib/firestore";
+} from "@/lib/dataAccess";
 import type { InspectionLog } from "@/lib/models";
 import { UNSCORED_LOG_LABEL, ratingColor, ratingLabel } from "@/lib/ratingScale";
 import { byNewestFirst, isoDatePart, isoTimePart } from "@/lib/inspectionDates";

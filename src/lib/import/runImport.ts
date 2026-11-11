@@ -26,7 +26,7 @@
 // ever under-count committed work, never invent it.
 
 import { supabase, fetchAllRows } from "@/lib/supabase";
-import { COLLECTIONS, PERMITS_TABLE } from "@/lib/firestore";
+import { COLLECTIONS, PERMITS_TABLE } from "@/lib/dataAccess";
 import type { Establishment, ReviewQueueItem, UploadBatch } from "@/lib/models";
 import type { MasterlistRow } from "./parseWorkbook";
 import type { ImportGroup, MatchDecision } from "./matchRows";

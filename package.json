@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "test": "vitest run",
+    "test:functions": "deno test supabase/functions/"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.1.6",
@@ -41,7 +43,8 @@
     "@vitejs/plugin-react": "4.7.0",
     "tailwindcss": "4.1.12",
     "typescript": "5.7.3",
-    "vite": "^6.4.1"
+    "vite": "^6.4.1",
+    "vitest": "^3.2.4"
   },
   "peerDependenciesMeta": {},
   "pnpm": {

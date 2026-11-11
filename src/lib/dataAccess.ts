@@ -17,9 +17,8 @@ import type {
 // because a queued write with nowhere durable to live is just data loss with
 // a delay.
 //
-// The file keeps its historical name (firestore.ts) so the forty-odd import
-// sites didn't churn in the migration commit; the exported surface is
-// unchanged. TABLE names are identical to the old Firestore collection names
+// Renamed from firestore.ts on 2026-11-08; the exported surface is unchanged.
+// TABLE names are identical to the old Firestore collection names
 // — the Postgres schema was created 1:1 (see migration/sql/01_schema.sql).
 
 export const COLLECTIONS = {

@@ -2,7 +2,7 @@
 //
 // The shapes the UI works with. These mirror the Postgres rows one-for-one
 // (with the inspector document's snake_case field names normalised in
-// firestore.ts) and carry no sync bookkeeping: the app is cloud-only, so a
+// dataAccess.ts) and carry no sync bookkeeping: the app is cloud-only, so a
 // record either exists in the database or it does not exist at all.
 
 export interface Category {
@@ -50,7 +50,7 @@ export interface Establishment {
   longitude?: number | null;
 
   // ── Masterlist fields ──────────────────────────────────────────────────
-  // Written by the Excel importer (pages/MasterlistImport.tsx); all optional
+  // Written by the Excel importer (components/MasterlistImport.tsx); all optional
   // because every record created before the importer existed lacks them.
   // `business_permit_no` is the business (mayor's) permit from the masterlist
   // — deliberately a separate field from `sanitary_permit_no`, which is a
@@ -139,7 +139,7 @@ export interface InspectionLog {
   // both clients read and write the same place. The Firestore-era
   // `inspection_results` sub-collection is gone, folded into this field by the
   // migration; there is no fallback read (see
-  // [REF: INSPECTION_DETAILS_FETCH_WEB] in lib/firestore.ts).
+  // [REF: INSPECTION_DETAILS_FETCH_WEB] in lib/dataAccess.ts).
   //
   // Two screens render these answers, both through InspectionChecklistView: the
   // Inspections detail dialog and the establishment history modal. So the shape

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PageStrip } from "@/components/PageStrip";
 import { supabase } from "@/lib/supabase";
 import { useCollection } from "@/lib/useCollection";
-import { COLLECTIONS, mapEstablishment, mapProfile } from "@/lib/firestore";
+import { COLLECTIONS, mapEstablishment, mapProfile } from "@/lib/dataAccess";
 import { saveWorkbook } from "@/lib/masterlistExport";
 import { logEvent } from "@/lib/auditEvents";
 import { toast } from "sonner";

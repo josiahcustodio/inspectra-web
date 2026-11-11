@@ -13,6 +13,7 @@ Student capstone project (2026); maintainer Josiah Custodio. "Clowtec" in paths/
 | This web repo: routes, pages, lib helpers, import algorithm, rating scale, barangay matching, known bugs | `docs/claude/WEB.md` |
 | The mobile app (separate repo `inspectra-mobile`): screens, offline/Hive, scoring, sanitary order, map, APK release/self-update | `docs/claude/MOBILE.md` |
 | How a feature works end to end (onboarding, inspection → SO → email → owner, auth/MFA, import, AI report, audit), how things deploy, timeline, open issues | `docs/claude/FLOWS.md` |
+| Where a behaviour lives in code: every `[REF: …]` anchor (web + mobile) with file, line range, one-line meaning and the UI control it backs | `docs/claude/ANCHORS.md` |
 
 Answer from those docs first; open source files only to confirm a detail or when the docs don't cover it. Prefer `Grep` for an
 identifier over reading whole pages (several pages are 400–700 lines). Everything in `docs/ARCH_GUIDE.md`, `docs/code-walkthrough/`
@@ -37,7 +38,7 @@ identifier over reading whole pages (several pages are 400–700 lines). Everyth
   establishment's point person via Edge Function `send-sanitary-order` (Brevo). No signatures (removed 2026-11-06).
 - **Barangays:** 105 PSGC polygons in `src/lib/data/`; `canonicalBarangay()` normalises spellings/aliases/"Poblacion N".
 - **Email:** Brevo (SMTP for Auth OTP/confirm/reset; HTTP API for Sanitary Orders). Templates in `supabase/templates/` use plain-text links.
-- **AI:** Edge Function `generate-barangay-summary` calls Anthropic `claude-opus-5` to draft an executive compliance report; web renders a jsPDF.
+- **AI:** Edge Function `generate-barangay-summary` calls Anthropic `claude-opus-5-5` to draft an executive compliance report; web renders a jsPDF.
 - **Audit:** `audit_log` via triggers on 9 tables + `log_event()` RPC for sign-ins/exports/reports; admin-only; web `/admin/audit` shows plain sentences.
 
 ## Security invariants for this repo — check whenever you write or review code
@@ -55,9 +56,11 @@ The site serves a strict Content-Security-Policy (rationale in `docs/SECURITY_HE
 
 ## Day-to-day
 
-- `npm run dev` (localhost:5173), `npm run build` (no typecheck → run `npx tsc --noEmit`). No tests in this repo.
+- `npm run dev` (localhost:5173), `npm run build` (no typecheck → run `npx tsc --noEmit`).
+- Tests: `npm test` (vitest, `src/**/*.test.ts` — pure logic only: rating scale, import cascade, barangay matching, report scope, dates),
+  `npm run test:functions` (Deno, the two Edge Function suites). Requirement ↔ test map and manual test forms in `docs/TESTING.md`.
 - Deploy: push `main` → Render auto-deploys. Env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (public by design).
 - Schema changes, RLS probes and seed scripts live in the maintainer's **untracked** `migration/` folder (needs a Supabase PAT). You will not have it;
   the resulting schema is documented in `docs/claude/BACKEND.md`. Never reconstruct schema from `ARCH_GUIDE.md` (Firebase era).
-- Data-access module is `src/lib/firestore.ts` despite the name (Supabase under the old filename). `src/lib/useCollection.ts` = fetch-all + realtime refetch.
+- Data-access module is `src/lib/dataAccess.ts` (was `firestore.ts` until 2026-11-08). `src/lib/useCollection.ts` = fetch-all + realtime refetch.
 - Dates: `inspection_date` strings without a zone are shown as written (`src/lib/inspectionDates.ts`); report scopes use Asia/Manila days.
