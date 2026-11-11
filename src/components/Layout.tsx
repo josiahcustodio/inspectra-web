@@ -75,7 +75,9 @@ export function Layout() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50">
+    // `relative` so sr-only (absolute) spans in table rows are clipped here
+    // instead of stretching the document and giving the whole page a scrollbar.
+    <div className="relative flex h-screen w-screen overflow-hidden bg-slate-50">
       {/* Drawer backdrop (tablet / phone only) */}
       {isDrawerOpen && (
         <div
